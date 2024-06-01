@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Mining Clicker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Crypto Mining Clicker</h1>
+        <div id="mining-area">
+            <button id="mine-button">Mine</button>
+            <button id="shop-button">Shop</button>
+            <div id="TPC">0</div>
+            <button id="reset-clicks-button">Reset Clicks</button>
+        </div>
+        <div id="shop" class="hidden">
+            <div class="shop-panel">
+                <div class="item">
+                    <div class="item-name">Upgrade Pickaxe</div>
+                    <div class="item-cost">Cost: 10 TPC</div>
+                    <button class="buy-button" data-cost="10" data-upgrade="clickValue">Buy</button>
+                </div>
+                <div class="item">
+                    <div class="item-name">Mining Robot</div>
+                    <div class="item-cost">Cost: 100 TPC</div>
+                    <button class="buy-button" data-cost="100" data-upgrade="autoClicker">Buy</button>
+                </div>
+            </div>
+        </div>
+        <div id="tasks">
+            <h2>Tasks</h2>
+            <div id="task1" class="task">
+                <div class="task-description">Накликай 1000 раз</div>
+                <div class="task-progress">
+                    <div id="task1-progress" class="task-progress-inner" style="width: 0;"></div>
+                </div>
+            </div>
+            <div id="task2" class="task">
+                <div class="task-description">Будь в игре 30 минут</div>
+                <div class="task-progress">
+                    <div id="task2-progress" class="task-progress-inner" style="width: 0;"></div>
+                </div>
+            </div>            
+            <div id="task3" class="task">
+                <div class="task-description">Получи автокликер</div>
+                <div class="task-progress">
+                    <div id="task3-progress" class="task-progress-inner" style="width: 0;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
