@@ -150,20 +150,28 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
     // ============================ CONFIGURATION ============================
-    // 1. Paste your Firebase config from Project settings → General → Web app
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
-    // ==================== CONFIGURATION ====================
-    // 1. Replace with your Firebase project config (from Firebase Console)
-     const firebaseConfig = {
-    apiKey: "AIzaSyDojI9M44G315oc4j_i-BgPMwK2ndnKjPw",
-    authDomain: "babaykagames-7b857.firebaseapp.com",
-    projectId: "babaykagames-7b857",
-    storageBucket: "babaykagames-7b857.firebasestorage.app",
-    messagingSenderId: "130162632362",
-    appId: "1:130162632362:web:d282af147e6e12c1fc52d3",
-    measurementId: "G-G02J4VPGN2"
+    // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0xSWDVYH4qq_tZtwMoAVmaDYJTxDiWVc",
+    authDomain: "hobbyhubtest-d9e15.firebaseapp.com",
+    databaseURL: "https://hobbyhubtest-d9e15-default-rtdb.firebaseio.com",
+    projectId: "hobbyhubtest-d9e15",
+    storageBucket: "hobbyhubtest-d9e15.firebasestorage.app",
+    messagingSenderId: "973454715972",
+    appId: "1:973454715972:web:8aaab7bacccaf7e35c6011",
+    measurementId: "G-3Y3DQMX46W"
   };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
 
     // 2. Replace with your real bot token from @BotFather
     const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
