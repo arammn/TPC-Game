@@ -1,56 +1,480 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Mining Clicker</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="telegram-web-app" content="yes">
+  <title>Crash Mini App</title>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --card: #1a1a2e;
+      --text: #ffffff;
+      --text2: #aaa;
+      --accent: #0abde3;
+      --danger: #ee5253;
+      --success: #10ac84;
+      --radius: 14px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .screen { display:none; flex-direction:column; padding:16px; gap:12px; min-height:100vh; }
+    .screen.active { display:flex; }
+
+    /* Home */
+    #crash-display {
+      text-align: center;
+      padding: 40px 8px;
+      background: linear-gradient(135deg, var(--card), #1a1a3e);
+      border-radius: var(--radius);
+    }
+    #multiplier {
+      font-size: 64px;
+      font-weight: 800;
+      color: var(--accent);
+      transition: color 0.1s;
+    }
+    #multiplier.crashed { color: var(--danger); }
+    #phase { font-size: 14px; color: var(--text2); margin-top: 8px; }
+    .bet-row { display:flex; gap:8px; margin-top:12px; }
+    .bet-row input {
+      flex:1;
+      padding:14px;
+      border-radius:var(--radius);
+      border:1px solid #333;
+      background:var(--card);
+      color:var(--text);
+      font-size:16px;
+    }
+    button {
+      padding: 14px 24px;
+      border: none;
+      border-radius: var(--radius);
+      font-weight: 700;
+      font-size: 16px;
+      cursor: pointer;
+      color: var(--text);
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.5; cursor:default; }
+    .btn-primary { background: var(--accent); }
+    .btn-success { background: var(--success); }
+    .btn-small { padding:8px 16px; font-size:14px; }
+
+    .provably-fair {
+      margin-top: 12px;
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 12px;
+      font-size: 13px;
+      color: var(--text2);
+    }
+
+    /* Bottom navigation */
+    .bottom-nav {
+      display: flex;
+      position: fixed;
+      bottom: 0; left:0; right:0;
+      background: var(--card);
+      border-top: 1px solid #222;
+    }
+    .nav-btn {
+      flex:1;
+      background: transparent;
+      color: var(--text2);
+      font-size: 14px;
+      border-radius: 0;
+      padding: 14px 0;
+    }
+    .nav-btn.active { color: var(--accent); border-top: 2px solid var(--accent); }
+
+    /* Profile */
+    .profile-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--card);
+      padding: 20px;
+      border-radius: var(--radius);
+    }
+    .profile-card img {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .stat-item {
+      background: var(--card);
+      padding: 14px;
+      border-radius: var(--radius);
+      text-align: center;
+    }
+    .stat-item .num { font-size: 22px; font-weight: 700; color: var(--accent); }
+    .stat-item .label { font-size: 12px; color: var(--text2); }
+
+    /* Withdraw */
+    .status-msg { margin-top:8px; font-weight:600; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Crypto Mining Clicker</h1>
-        <div id="mining-area">
-            <button id="mine-button">Mine</button>
-            <button id="shop-button">Shop</button>
-            <div id="TPC">0</div>
-            <button id="reset-clicks-button">Reset Clicks</button>
-        </div>
-        <div id="shop" class="hidden">
-            <div class="shop-panel">
-                <div class="item">
-                    <div class="item-name">Upgrade Pickaxe</div>
-                    <div class="item-cost">Cost: 10 TPC</div>
-                    <button class="buy-button" data-cost="10" data-upgrade="clickValue">Buy</button>
-                </div>
-                <div class="item">
-                    <div class="item-name">Mining Robot</div>
-                    <div class="item-cost">Cost: 100 TPC</div>
-                    <button class="buy-button" data-cost="100" data-upgrade="autoClicker">Buy</button>
-                </div>
-            </div>
-        </div>
-        <div id="tasks">
-            <h2>Tasks</h2>
-            <div id="task1" class="task">
-                <div class="task-description">Накликай 1000 раз</div>
-                <div class="task-progress">
-                    <div id="task1-progress" class="task-progress-inner" style="width: 0;"></div>
-                </div>
-            </div>
-            <div id="task2" class="task">
-                <div class="task-description">Будь в игре 30 минут</div>
-                <div class="task-progress">
-                    <div id="task2-progress" class="task-progress-inner" style="width: 0;"></div>
-                </div>
-            </div>            
-            <div id="task3" class="task">
-                <div class="task-description">Получи автокликер</div>
-                <div class="task-progress">
-                    <div id="task3-progress" class="task-progress-inner" style="width: 0;"></div>
-                </div>
-            </div>
-        </div>
+
+  <div id="app">
+    <!-- Loading -->
+    <div id="loading" class="screen active">
+      <div style="margin:auto; text-align:center;">
+        <div style="width:48px;height:48px;border:4px solid var(--card);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 16px;"></div>
+        <p style="color:var(--text2);">Loading...</p>
+      </div>
     </div>
-    <script src="script.js"></script>
+
+    <!-- Home (Game) -->
+    <div id="home" class="screen">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:18px;">⭐ <span id="balanceHome">0</span> Stars</span>
+        <button id="topupBtn" class="btn-small btn-primary">+ Top Up</button>
+      </div>
+      <div id="crash-display">
+        <div id="multiplier">1.00x</div>
+        <div id="phase">Waiting for next round...</div>
+      </div>
+      <div class="bet-row">
+        <input type="number" id="betAmount" placeholder="Bet amount" min="1" step="1">
+        <button id="placeBetBtn" class="btn-primary">Place Bet</button>
+        <button id="cashoutBtn" class="btn-success" disabled>Cash Out</button>
+      </div>
+      <div class="provably-fair">
+        <strong>ℹ️ Provably Fair</strong><br>
+        This is a demo. In production, crash points are generated using HMAC‑SHA256 with server & client seeds.<br>
+        <span style="color:var(--accent);">Current round crash point: <span id="demoCrashPoint">--</span>x</span>
+      </div>
+    </div>
+
+    <!-- Profile -->
+    <div id="profile" class="screen">
+      <div class="profile-card">
+        <img id="profileAvatar" src="" alt="Avatar">
+        <div>
+          <h2 id="profileName">User</h2>
+          <p style="color:var(--text2);" id="profileUsername"></p>
+          <p style="font-size:18px;margin-top:4px;">⭐ <span id="profileBalance">0</span> Stars</p>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-item"><div class="num" id="gamesPlayed">0</div><div class="label">Games Played</div></div>
+        <div class="stat-item"><div class="num" id="wins">0</div><div class="label">Wins</div></div>
+        <div class="stat-item"><div class="num" id="losses">0</div><div class="label">Losses</div></div>
+        <div class="stat-item"><div class="num" id="totalWagered">0</div><div class="label">Total Wagered</div></div>
+      </div>
+    </div>
+
+    <!-- Withdraw (Demo) -->
+    <div id="withdraw" class="screen">
+      <h2>💸 Withdraw Stars (Demo)</h2>
+      <p style="color:var(--text2);">In a real app, a withdrawal request would be sent to an admin.</p>
+      <input type="number" id="withdrawAmount" placeholder="Amount" style="width:100%; padding:14px; border-radius:var(--radius); border:1px solid #333; background:var(--card); color:var(--text); font-size:16px;">
+      <button id="withdrawBtn" class="btn-primary">Request Withdrawal (Demo)</button>
+      <div id="withdrawStatus" class="status-msg"></div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-screen="home">🎮 Game</button>
+      <button class="nav-btn" data-screen="profile">👤 Profile</button>
+      <button class="nav-btn" data-screen="withdraw">💸 Withdraw</button>
+    </nav>
+  </div>
+
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    // ==================== CONFIGURATION ====================
+    const BOT_TOKEN = 'YOUR_BOT_TOKEN';   // <-- PUT YOUR REAL BOT TOKEN HERE
+
+    // ==================== TELEGRAM INIT ====================
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    // Parse initData to get user info (no backend validation)
+    function getUserFromInitData() {
+      const params = new URLSearchParams(tg.initData);
+      try {
+        const userStr = params.get('user');
+        return userStr ? JSON.parse(userStr) : null;
+      } catch { return null; }
+    }
+
+    const currentUser = getUserFromInitData() || { id: 'demo', first_name: 'Demo', username: 'demo', photo_url: '' };
+    const userId = String(currentUser.id);
+
+    // ==================== LOCAL STORAGE (fake backend) ====================
+    function getDB() {
+      let db = localStorage.getItem('crash_db');
+      return db ? JSON.parse(db) : null;
+    }
+    function saveDB(db) {
+      localStorage.setItem('crash_db', JSON.stringify(db));
+    }
+    function initDB() {
+      let db = getDB();
+      if (!db) {
+        db = {
+          users: {}
+        };
+      }
+      if (!db.users[userId]) {
+        db.users[userId] = {
+          balance: 100,          // start with 100 free Stars
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          totalWagered: 0
+        };
+        saveDB(db);
+      }
+      return db;
+    }
+
+    let db = initDB();
+    let userData = db.users[userId];
+
+    // ==================== UI HELPERS ====================
+    function updateAllBalances() {
+      document.getElementById('balanceHome').textContent = userData.balance;
+      document.getElementById('profileBalance').textContent = userData.balance;
+    }
+    function updateProfileStats() {
+      document.getElementById('gamesPlayed').textContent = userData.gamesPlayed;
+      document.getElementById('wins').textContent = userData.wins;
+      document.getElementById('losses').textContent = userData.losses;
+      document.getElementById('totalWagered').textContent = userData.totalWagered;
+      document.getElementById('profileAvatar').src = currentUser.photo_url || 'https://via.placeholder.com/64';
+      document.getElementById('profileName').textContent = currentUser.first_name || 'User';
+      document.getElementById('profileUsername').textContent = currentUser.username ? '@'+currentUser.username : '';
+    }
+    function saveUser() {
+      db.users[userId] = userData;
+      saveDB(db);
+      updateAllBalances();
+      updateProfileStats();
+    }
+
+    // ==================== NAVIGATION ====================
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(btn.dataset.screen).classList.add('active');
+        if (btn.dataset.screen === 'profile') {
+          updateAllBalances();
+          updateProfileStats();
+        }
+      });
+    });
+
+    // ==================== TOP-UP (Stars Invoice) ====================
+    document.getElementById('topupBtn').addEventListener('click', () => {
+      const amount = parseInt(prompt('Enter Stars amount to buy:', '50'));
+      if (!amount || amount <= 0) return;
+
+      // Create invoice link via Bot API (token exposed - for production use backend)
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Stars Top-Up',
+          description: `Add ${amount} Stars to your balance`,
+          payload: JSON.stringify({ user_id: userId, type: 'topup', amount }),
+          currency: 'XTR',
+          prices: [{ label: 'Stars', amount }],
+          provider_token: ''
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          // Open invoice in Telegram
+          tg.openInvoice(data.result, status => {
+            if (status === 'paid') {
+              // Add Stars to local balance (in real app, bot processes this)
+              userData.balance += amount;
+              saveUser();
+              alert(`✅ Added ${amount} Stars!`);
+            }
+          });
+        } else {
+          alert('Failed to create invoice: ' + (data.description || 'Unknown error'));
+        }
+      })
+      .catch(err => alert('Network error: ' + err.message));
+    });
+
+    // ==================== CRASH GAME (client-side simulation) ====================
+    const game = {
+      phase: 'betting',     // betting | running | crashed | cooldown
+      multiplier: 1.00,
+      countdown: 15,
+      crashPoint: 1.00,
+      betAmount: 0,
+      hasBet: false,
+      interval: null,
+      timeout: null
+    };
+
+    const multiplierEl = document.getElementById('multiplier');
+    const phaseEl = document.getElementById('phase');
+    const betInput = document.getElementById('betAmount');
+    const placeBetBtn = document.getElementById('placeBetBtn');
+    const cashoutBtn = document.getElementById('cashoutBtn');
+    const demoCrashPointEl = document.getElementById('demoCrashPoint');
+
+    function generateCrashPoint() {
+      // Simple random with 1% instant crash, then 1x~30x
+      if (Math.random() < 0.01) return 1.00;
+      const r = Math.random();
+      const raw = 0.99 / (1 - r) * 0.95; // 5% house edge
+      return Math.max(1.01, Math.round(raw * 100) / 100);
+    }
+
+    function startNewRound() {
+      game.phase = 'betting';
+      game.multiplier = 1.00;
+      game.hasBet = false;
+      game.betAmount = 0;
+      game.crashPoint = generateCrashPoint();
+      demoCrashPointEl.textContent = game.crashPoint.toFixed(2);
+
+      multiplierEl.textContent = '1.00x';
+      multiplierEl.classList.remove('crashed');
+      placeBetBtn.disabled = false;
+      cashoutBtn.disabled = true;
+      betInput.disabled = false;
+
+      // Countdown 15s
+      let sec = 15;
+      phaseEl.textContent = `Betting: ${sec}s remaining`;
+      const countdownInterval = setInterval(() => {
+        sec--;
+        if (sec <= 0) {
+          clearInterval(countdownInterval);
+          startRunning();
+        } else {
+          phaseEl.textContent = `Betting: ${sec}s remaining`;
+        }
+      }, 1000);
+    }
+
+    function startRunning() {
+      game.phase = 'running';
+      phaseEl.textContent = 'Game Running';
+      placeBetBtn.disabled = true;
+      betInput.disabled = true;
+      if (game.hasBet) cashoutBtn.disabled = false;
+
+      let mult = 1.00;
+      const step = 0.02;
+      game.multiplier = mult;
+      const runInterval = setInterval(() => {
+        mult = Math.round((mult + step) * 100) / 100;
+        game.multiplier = mult;
+        multiplierEl.textContent = mult.toFixed(2) + 'x';
+        multiplierEl.style.color = mult > 3 ? '#ee5253' : '#0abde3';
+
+        if (mult >= game.crashPoint) {
+          clearInterval(runInterval);
+          crash();
+        }
+      }, 100);
+      game.interval = runInterval;
+    }
+
+    function crash() {
+      game.phase = 'crashed';
+      game.multiplier = game.crashPoint;
+      multiplierEl.textContent = game.crashPoint.toFixed(2) + 'x';
+      multiplierEl.classList.add('crashed');
+      phaseEl.textContent = `Crashed at ${game.crashPoint}x`;
+      cashoutBtn.disabled = true;
+
+      // If user had bet and didn't cashout, lose it
+      if (game.hasBet) {
+        game.hasBet = false;
+        userData.gamesPlayed++;
+        userData.losses++;
+        userData.totalWagered += game.betAmount;
+        saveUser();
+        alert(`💥 Crashed! You lost ${game.betAmount} Stars.`);
+      }
+
+      // Cooldown then new round
+      setTimeout(() => {
+        startNewRound();
+      }, 5000);
+    }
+
+    placeBetBtn.addEventListener('click', () => {
+      if (game.phase !== 'betting') return;
+      const amount = parseInt(betInput.value);
+      if (!amount || amount <= 0 || amount > userData.balance) {
+        alert('Invalid amount or insufficient balance.');
+        return;
+      }
+      game.betAmount = amount;
+      game.hasBet = true;
+      userData.balance -= amount;
+      userData.totalWagered += amount;
+      saveUser();
+      placeBetBtn.disabled = true;
+      betInput.disabled = true;
+      alert(`Bet placed: ${amount} Stars. Wait for the round to start.`);
+    });
+
+    cashoutBtn.addEventListener('click', () => {
+      if (game.phase !== 'running' || !game.hasBet) return;
+      const payout = Math.floor(game.betAmount * game.multiplier);
+      game.hasBet = false;
+      cashoutBtn.disabled = true;
+
+      // Credit winnings
+      userData.balance += payout;
+      userData.gamesPlayed++;
+      userData.wins++;
+      saveUser();
+      alert(`💰 Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars.`);
+    });
+
+    // ==================== WITHDRAW (Demo) ====================
+    document.getElementById('withdrawBtn').addEventListener('click', () => {
+      const amount = parseInt(document.getElementById('withdrawAmount').value);
+      if (!amount || amount <= 0) {
+        document.getElementById('withdrawStatus').textContent = 'Invalid amount.';
+        return;
+      }
+      document.getElementById('withdrawStatus').textContent = `✅ Demo withdrawal of ${amount} Stars logged. (No real transfer)`;
+      document.getElementById('withdrawAmount').value = '';
+    });
+
+    // ==================== START ====================
+    function init() {
+      updateAllBalances();
+      updateProfileStats();
+      document.getElementById('loading').classList.remove('active');
+      document.getElementById('home').classList.add('active');
+      startNewRound();
+    }
+    init();
+  </script>
 </body>
 </html>
