@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="telegram-web-app" content="yes">
   <title>Crash Game</title>
-  <!-- Firebase Realtime Database compat SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <style>
     :root {
       --bg: #070b14; --card: #101524; --card2: #1a1f33;
@@ -21,7 +18,7 @@
     .screen.active { display: block; }
 
     /* Loading */
-    #loadingScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; text-align: center; }
+    #loadingScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
     .spinner { width: 48px; height: 48px; border: 4px solid var(--card2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -62,25 +59,16 @@
     .withdraw-box input { width: 100%; padding:14px; background: var(--card2); border:1px solid rgba(255,255,255,0.1); border-radius: 40px; color:#fff; font-size:16px; margin-bottom:12px; }
     .status-msg { margin-top:8px; font-weight:600; }
 
-    /* Admin */
-    .wd-card { background: var(--card); border-radius: var(--radius); padding:14px; margin-bottom:10px; }
-    .wd-card .actions { display: flex; gap:8px; margin-top:8px; }
-
     /* Bottom nav */
     .bottom-nav { position: fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; background: rgba(7,11,20,0.9); backdrop-filter:blur(20px); display:flex; justify-content:space-around; padding:8px 0 env(safe-area-inset-bottom); border-top:1px solid rgba(255,255,255,0.05); }
     .nav-btn { background:none; border:none; color:var(--text2); font-weight:600; padding:8px 16px; cursor:pointer; }
     .nav-btn.active { color:var(--accent); }
-
-    .error-message { color: var(--danger); margin-top: 16px; max-width: 90%; }
   </style>
 </head>
 <body>
   <div class="app">
-    <!-- Loading screen -->
-    <div id="loadingScreen">
-      <div class="spinner"></div>
-      <p id="loadingText" style="margin-top:16px; color:var(--text2)">Initializing...</p>
-    </div>
+    <!-- Loading -->
+    <div id="loadingScreen"><div class="spinner"></div></div>
 
     <!-- Game Screen -->
     <div id="gameScreen" class="screen">
@@ -124,7 +112,7 @@
     <!-- Withdraw Screen -->
     <div id="withdrawScreen" class="screen">
       <h2 style="margin-bottom:16px;">💸 Withdraw Stars</h2>
-      <p style="color:var(--text2); margin-bottom:12px;">Minimum withdrawal: 100 ⭐</p>
+      <p style="color:var(--text2); margin-bottom:12px;">Minimum: 100 Stars. Your request will be sent to the admin.</p>
       <div class="withdraw-box">
         <input type="number" id="withdrawAmount" placeholder="Amount" inputmode="numeric">
         <button id="withdrawRequestBtn">Request Withdrawal</button>
@@ -132,162 +120,67 @@
       </div>
     </div>
 
-    <!-- Admin Screen (hidden unless admin) -->
-    <div id="adminScreen" class="screen">
-      <h2 style="margin-bottom:16px;">⚙️ Admin Panel</h2>
-      <div id="pendingWithdrawals">Loading...</div>
-    </div>
-
     <!-- Bottom Navigation -->
     <div class="bottom-nav" id="bottomNav">
       <button class="nav-btn active" data-screen="game">🎮 Game</button>
       <button class="nav-btn" data-screen="profile">👤 Profile</button>
       <button class="nav-btn" data-screen="withdraw">💸 Withdraw</button>
-      <button class="nav-btn" data-screen="admin" id="adminNavBtn" style="display:none;">⚙️ Admin</button>
     </div>
   </div>
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    // ==================== YOUR CONFIGURATION ====================
-    // 1. Firebase config (already pasted – do NOT change)
-    const firebaseConfig = {
-      apiKey: "AIzaSyA0xSWDVYH4qq_tZtwMoAVmaDYJTxDiWVc",
-      authDomain: "hobbyhubtest-d9e15.firebaseapp.com",
-      databaseURL: "https://hobbyhubtest-d9e15-default-rtdb.firebaseio.com",
-      projectId: "hobbyhubtest-d9e15",
-      storageBucket: "hobbyhubtest-d9e15.firebasestorage.app",
-      messagingSenderId: "973454715972",
-      appId: "1:973454715972:web:8aaab7bacccaf7e35c6011",
-      measurementId: "G-3Y3DQMX46W"
-    };
+    // ==================== YOUR SETTINGS (change these) ====================
+    const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0'; // your bot token
+    const ADMIN_ID = '8033727736';                                      // your Telegram user ID
+    const ADMIN_USERNAME = 'YOUR_ADMIN_USERNAME';                      // admin's @username (without @)
 
-    // 2. Replace with your real bot token from @BotFather
-    const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
-
-    // 3. Put your Telegram user IDs here to be admins
-    const ADMIN_IDS = ['8033727736'];
-
-    // ==================== INITIALIZATION ====================
-    firebase.initializeApp(firebaseConfig);
-    const rtdb = firebase.database();
-
+    // ==================== TELEGRAM INIT ====================
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
-    // Extract Telegram user (or fallback for browser testing)
     let currentUser = null;
     try {
       const params = new URLSearchParams(tg.initData);
       currentUser = JSON.parse(params.get('user'));
     } catch(e) {}
     if (!currentUser) {
-      // Fallback – remove in production
+      // Fallback for testing outside Telegram (remove in production)
       currentUser = { id: 123456789, first_name: 'Demo', username: 'demo', photo_url: '' };
     }
     const userId = String(currentUser.id);
-    const userRef = rtdb.ref('users/' + userId);
-    const isAdmin = ADMIN_IDS.includes(userId);
+    const isAdmin = (userId === ADMIN_ID);
 
-    // ==================== LOADING & ERROR HANDLING ====================
-    const loadingScreen = document.getElementById('loadingScreen');
-    const loadingText = document.getElementById('loadingText');
+    // ==================== LOCAL STORAGE ====================
+    const STORAGE_KEY = 'crash_game_' + userId;
+    let userData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+      balance: 0,
+      gamesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      totalWagered: 0
+    };
 
-    function showError(message) {
-      loadingScreen.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+    function saveUserData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
+      updateUI();
+    }
+    function updateUI() {
+      document.getElementById('balanceGame').textContent = userData.balance;
+      document.getElementById('profileBalance').textContent = userData.balance;
+      document.getElementById('gamesPlayed').textContent = userData.gamesPlayed;
+      document.getElementById('wins').textContent = userData.wins;
+      document.getElementById('losses').textContent = userData.losses;
+      document.getElementById('totalWagered').textContent = userData.totalWagered;
     }
 
-    // ==================== BALANCE & PROFILE HELPERS ====================
-    let userBalance = 0;
-
-    function updateBalanceDisplay() {
-      document.getElementById('balanceGame').textContent = userBalance;
-      document.getElementById('profileBalance').textContent = userBalance;
+    // ==================== PROFILE FILL ====================
+    function fillProfile() {
+      document.getElementById('profileAvatar').src = currentUser.photo_url || 'https://via.placeholder.com/64';
+      document.getElementById('profileName').textContent = currentUser.first_name || 'User';
+      document.getElementById('profileUsername').textContent = currentUser.username ? '@'+currentUser.username : '';
     }
-
-    async function createUserIfNeeded() {
-      const snap = await userRef.once('value');
-      if (!snap.exists()) {
-        await userRef.set({
-          id: userId,
-          username: currentUser.username || '',
-          firstName: currentUser.first_name || '',
-          photoUrl: currentUser.photo_url || '',
-          balance: 0,
-          gamesPlayed: 0,
-          wins: 0,
-          losses: 0,
-          totalWagered: 0
-        });
-      }
-    }
-
-    async function loadUserData() {
-      try {
-        loadingText.textContent = 'Connecting to Firebase...';
-        await createUserIfNeeded();
-        const snap = await userRef.once('value');
-        const data = snap.val() || {};
-        userBalance = data.balance || 0;
-        updateBalanceDisplay();
-        fillProfile(data);
-        return true;
-      } catch (err) {
-        console.error(err);
-        showError('Failed to load user data. Check the browser console (F12) for details.');
-        return false;
-      }
-    }
-
-    function fillProfile(data) {
-      document.getElementById('profileAvatar').src = data.photoUrl || 'https://via.placeholder.com/64';
-      document.getElementById('profileName').textContent = data.firstName || 'User';
-      document.getElementById('profileUsername').textContent = data.username ? '@'+data.username : '';
-      document.getElementById('gamesPlayed').textContent = data.gamesPlayed || 0;
-      document.getElementById('wins').textContent = data.wins || 0;
-      document.getElementById('losses').textContent = data.losses || 0;
-      document.getElementById('totalWagered').textContent = data.totalWagered || 0;
-    }
-
-    async function refreshBalance() {
-      const snap = await userRef.child('balance').once('value');
-      userBalance = snap.val() || 0;
-      updateBalanceDisplay();
-    }
-
-    // ==================== TRANSACTION HELPERS (safe updates) ====================
-    // Realtime Database transactions return { committed, snapshot }
-    function incrementBalance(amount) {
-      return userRef.child('balance').transaction(current => (current || 0) + amount);
-    }
-
-    function incrementStat(field, amount) {
-      return userRef.child(field).transaction(current => (current || 0) + amount);
-    }
-
-    // ==================== SCREEN SWITCHING ====================
-    const screens = ['game', 'profile', 'withdraw', 'admin'];
-    function showScreen(id) {
-      screens.forEach(s => document.getElementById(s + 'Screen').classList.remove('active'));
-      document.getElementById(id + 'Screen').classList.add('active');
-      document.querySelectorAll('.nav-btn').forEach(b => {
-        b.classList.remove('active');
-        if (b.dataset.screen === id) b.classList.add('active');
-      });
-      if (id === 'profile') {
-        userRef.once('value').then(snap => fillProfile(snap.val() || {}));
-      }
-      if (id === 'admin') loadPendingWithdrawals();
-    }
-
-    document.getElementById('bottomNav').addEventListener('click', (e) => {
-      const btn = e.target.closest('.nav-btn');
-      if (!btn) return;
-      showScreen(btn.dataset.screen);
-    });
-
-    if (isAdmin) document.getElementById('adminNavBtn').style.display = 'block';
 
     // ==================== CRASH GAME ENGINE ====================
     const game = {
@@ -296,40 +189,43 @@
       crashPoint: 1.0,
       betAmount: 0,
       hasBet: false,
-      countdownTimer: null,
-      runTimer: null
+      timers: {}
     };
-
     const multiplierEl = document.getElementById('multiplierDisplay');
     const phaseEl = document.getElementById('phaseDisplay');
     const betInput = document.getElementById('betAmount');
     const placeBetBtn = document.getElementById('placeBetBtn');
     const cashoutBtn = document.getElementById('cashoutBtn');
     const crashHistoryEl = document.getElementById('crashHistory');
+    let crashHistory = JSON.parse(localStorage.getItem('crash_history')) || [];
 
     function generateCrashPoint() {
-      if (Math.random() < 0.01) return 1.00;
+      if (Math.random() < 0.01) return 1.00;                  // 1% instant crash
       const r = Math.random();
       const raw = 0.99 / (1 - r);
-      const withEdge = raw * 0.95; // 5% house edge
+      const withEdge = raw * 0.95;                           // 5% house edge
       return Math.max(1.00, Math.round(withEdge * 100) / 100);
     }
 
     function addCrashHistory(cp) {
-      const item = document.createElement('span');
-      item.className = 'history-item' + (cp < 1.2 ? ' crashed' : '');
-      item.textContent = cp.toFixed(2) + 'x';
-      crashHistoryEl.prepend(item);
-      while (crashHistoryEl.children.length > 20) crashHistoryEl.lastChild.remove();
+      crashHistory.unshift(cp);
+      if (crashHistory.length > 20) crashHistory.pop();
+      localStorage.setItem('crash_history', JSON.stringify(crashHistory));
+      renderHistory();
     }
 
-    function clearGameTimers() {
-      if (game.countdownTimer) clearInterval(game.countdownTimer);
-      if (game.runTimer) clearInterval(game.runTimer);
+    function renderHistory() {
+      crashHistoryEl.innerHTML = '';
+      crashHistory.forEach(cp => {
+        const item = document.createElement('span');
+        item.className = 'history-item' + (cp < 1.2 ? ' crashed' : '');
+        item.textContent = cp.toFixed(2) + 'x';
+        crashHistoryEl.appendChild(item);
+      });
     }
 
-    async function startNewRound() {
-      clearGameTimers();
+    function startNewRound() {
+      clearTimers();
       game.phase = 'betting';
       game.multiplier = 1.0;
       game.hasBet = false;
@@ -343,10 +239,10 @@
 
       let sec = 15;
       phaseEl.textContent = `Betting: ${sec}s`;
-      game.countdownTimer = setInterval(() => {
+      game.timers.countdown = setInterval(() => {
         sec--;
         if (sec <= 0) {
-          clearInterval(game.countdownTimer);
+          clearInterval(game.timers.countdown);
           startRunning();
         } else {
           phaseEl.textContent = `Betting: ${sec}s`;
@@ -362,73 +258,65 @@
       if (game.hasBet) cashoutBtn.disabled = false;
 
       let mult = 1.0;
-      game.runTimer = setInterval(() => {
+      game.timers.run = setInterval(() => {
         mult = Math.round((mult + 0.03) * 100) / 100;
         game.multiplier = mult;
         multiplierEl.textContent = mult.toFixed(2) + 'x';
         if (mult >= game.crashPoint) {
-          clearInterval(game.runTimer);
+          clearInterval(game.timers.run);
           crash();
         }
       }, 100);
     }
 
-    async function crash() {
+    function crash() {
       game.phase = 'crashed';
       multiplierEl.textContent = game.crashPoint.toFixed(2) + 'x';
       multiplierEl.classList.add('crashed');
       phaseEl.textContent = `Crashed at ${game.crashPoint.toFixed(2)}x`;
       addCrashHistory(game.crashPoint);
 
-      // Save crash point to history
-      rtdb.ref('gameHistory').push({
-        crashPoint: game.crashPoint,
-        timestamp: firebase.database.ServerValue.TIMESTAMP
-      });
-
       if (game.hasBet) {
-        // User lost – update stats
-        await Promise.all([
-          incrementStat('gamesPlayed', 1),
-          incrementStat('losses', 1),
-          incrementStat('totalWagered', game.betAmount)
-        ]);
-        refreshBalance();
+        // Lost
+        userData.gamesPlayed++;
+        userData.losses++;
+        userData.totalWagered += game.betAmount;
+        saveUserData();
         alert(`Lost ${game.betAmount} Stars!`);
       }
       cashoutBtn.disabled = true;
-      setTimeout(() => startNewRound(), 5000);
+      setTimeout(startNewRound, 5000);
     }
 
-    placeBetBtn.addEventListener('click', async () => {
+    function clearTimers() {
+      clearInterval(game.timers.countdown);
+      clearInterval(game.timers.run);
+    }
+
+    placeBetBtn.addEventListener('click', () => {
       if (game.phase !== 'betting') return;
       const amount = parseInt(betInput.value);
       if (!amount || amount <= 0) return alert('Enter a valid amount');
-      if (amount > userBalance) return alert('Insufficient balance');
+      if (amount > userData.balance) return alert('Insufficient balance');
 
       game.betAmount = amount;
       game.hasBet = true;
-      // Deduct balance immediately
-      await incrementBalance(-amount);
-      await refreshBalance();
+      userData.balance -= amount;
+      saveUserData();
       placeBetBtn.disabled = true;
       betInput.disabled = true;
     });
 
-    cashoutBtn.addEventListener('click', async () => {
+    cashoutBtn.addEventListener('click', () => {
       if (!game.hasBet || game.phase !== 'running') return;
       const payout = Math.floor(game.betAmount * game.multiplier);
       game.hasBet = false;
       cashoutBtn.disabled = true;
-
-      // Update balance and stats
-      await Promise.all([
-        incrementBalance(payout),
-        incrementStat('gamesPlayed', 1),
-        incrementStat('wins', 1),
-        incrementStat('totalWagered', game.betAmount)
-      ]);
-      refreshBalance();
+      userData.balance += payout;
+      userData.gamesPlayed++;
+      userData.wins++;
+      userData.totalWagered += game.betAmount;
+      saveUserData();
       alert(`Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars`);
     });
 
@@ -452,10 +340,10 @@
       .then(r => r.json())
       .then(data => {
         if (data.ok) {
-          tg.openInvoice(data.result, async (status) => {
+          tg.openInvoice(data.result, (status) => {
             if (status === 'paid') {
-              await incrementBalance(amount);
-              refreshBalance();
+              userData.balance += amount;
+              saveUserData();
               alert('✅ Stars added!');
             }
           });
@@ -463,102 +351,55 @@
           alert('Invoice error: ' + data.description);
         }
       })
-      .catch(() => alert('Network error. Check your bot token.'));
+      .catch(() => alert('Network error. Check bot token.'));
     });
 
-    // ==================== WITHDRAWAL ====================
-    document.getElementById('withdrawRequestBtn').addEventListener('click', async () => {
+    // ==================== WITHDRAW (send message to admin) ====================
+    document.getElementById('withdrawRequestBtn').addEventListener('click', () => {
       const amount = parseInt(document.getElementById('withdrawAmount').value);
       const statusEl = document.getElementById('withdrawStatus');
-      if (!amount || amount < 100) return statusEl.textContent = 'Minimum withdrawal is 100 Stars.';
-      if (amount > userBalance) return statusEl.textContent = 'Insufficient balance.';
+      if (!amount || amount < 100) return statusEl.textContent = 'Min 100 Stars.';
+      if (amount > userData.balance) return statusEl.textContent = 'Insufficient balance.';
 
-      statusEl.textContent = 'Processing...';
-      try {
-        // Use transaction to deduct balance and push withdrawal request atomically
-        await userRef.child('balance').transaction(async (current) => {
-          if (current === null || current < amount) {
-            // Return undefined to abort transaction
-            return;
-          }
-          return current - amount;
-        });
+      // Deduct locally
+      userData.balance -= amount;
+      saveUserData();
+      document.getElementById('withdrawAmount').value = '';
+      statusEl.textContent = 'Request sent to admin. They will process it manually.';
 
-        // After successful deduction, push withdrawal request
-        await rtdb.ref('withdrawals').push({
-          userId,
-          username: currentUser.username || currentUser.first_name,
-          amount,
-          status: 'pending',
-          timestamp: firebase.database.ServerValue.TIMESTAMP
-        });
-
-        statusEl.textContent = '✅ Request submitted. Admins will review.';
-        refreshBalance();
-        document.getElementById('withdrawAmount').value = '';
-      } catch (e) {
-        statusEl.textContent = '❌ ' + (e.message || 'Transaction failed');
-      }
+      // Open a pre‑filled message to the admin
+      const message = encodeURIComponent(
+        `🔄 Withdrawal request\nUser: @${currentUser.username || currentUser.first_name}\nID: ${userId}\nAmount: ${amount} ⭐\nPlease process.`
+      );
+      window.open(`https://t.me/${ADMIN_USERNAME}?text=${message}`, '_blank');
     });
 
-    // ==================== ADMIN PANEL ====================
-    function loadPendingWithdrawals() {
-      if (!isAdmin) return;
-      rtdb.ref('withdrawals')
-        .orderByChild('status')
-        .equalTo('pending')
-        .on('value', snapshot => {
-          const container = document.getElementById('pendingWithdrawals');
-          container.innerHTML = '';
-          if (!snapshot.exists()) {
-            container.innerHTML = '<p style="color:var(--text2)">No pending withdrawals.</p>';
-            return;
-          }
-          snapshot.forEach(child => {
-            const w = child.val();
-            container.innerHTML += `
-              <div class="wd-card">
-                <strong>${w.username}</strong> (ID: ${w.userId})<br>
-                Amount: <b>${w.amount} ⭐</b>
-                <div class="actions">
-                  <button class="btn-success" onclick="window.approveWd('${child.key}')">Approve</button>
-                  <button class="btn-danger" onclick="window.rejectWd('${child.key}', '${w.userId}', ${w.amount})">Reject</button>
-                </div>
-              </div>`;
-          });
-        });
+    // ==================== SCREEN NAVIGATION ====================
+    function showScreen(id) {
+      ['game', 'profile', 'withdraw'].forEach(s => document.getElementById(s + 'Screen').classList.remove('active'));
+      document.getElementById(id + 'Screen').classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.remove('active');
+        if (b.dataset.screen === id) b.classList.add('active');
+      });
+      if (id === 'profile') fillProfile();
     }
+    document.getElementById('bottomNav').addEventListener('click', (e) => {
+      const btn = e.target.closest('.nav-btn');
+      if (!btn) return;
+      showScreen(btn.dataset.screen);
+    });
 
-    window.approveWd = async (wdId) => {
-      await rtdb.ref('withdrawals/' + wdId).update({ status: 'approved' });
-    };
-
-    window.rejectWd = async (wdId, uid, amount) => {
-      // Refund balance
-      await rtdb.ref('users/' + uid + '/balance').transaction(cur => (cur || 0) + amount);
-      await rtdb.ref('withdrawals/' + wdId).update({ status: 'rejected' });
-    };
-
-    // ==================== LOAD CRASH HISTORY ====================
-    async function loadHistoryFromDb() {
-      const snap = await rtdb.ref('gameHistory').orderByChild('timestamp').limitToLast(20).once('value');
-      if (snap.exists()) {
-        const values = [];
-        snap.forEach(child => values.push(child.val().crashPoint));
-        values.reverse().forEach(cp => addCrashHistory(cp));
-      }
-    }
-
-    // ==================== START APP ====================
-    (async () => {
-      const success = await loadUserData();
-      if (!success) return;
-
-      await loadHistoryFromDb();
-      loadingScreen.style.display = 'none';
+    // ==================== START ====================
+    function init() {
+      fillProfile();
+      updateUI();
+      renderHistory();
+      document.getElementById('loadingScreen').style.display = 'none';
       showScreen('game');
       startNewRound();
-    })();
+    }
+    init();
   </script>
 </body>
 </html>
