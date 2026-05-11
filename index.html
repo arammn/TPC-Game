@@ -10,24 +10,18 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     :root {
-      --bg: #070b14;
-      --card: #101524;
-      --card2: #1a1f33;
-      --text: #fff;
-      --text2: #99a0b8;
-      --accent: #00d4ff;
-      --danger: #ff4757;
-      --success: #2ed573;
-      --radius: 16px;
+      --bg: #070b14; --card: #101524; --card2: #1a1f33;
+      --text: #fff; --text2: #99a0b8; --accent: #00d4ff;
+      --danger: #ff4757; --success: #2ed573; --radius: 16px;
     }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; user-select: none; -webkit-tap-highlight-color: transparent; }
+    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; user-select: none; -webkit-tap-highlight-color: transparent; }
     .app { max-width: 480px; margin: 0 auto; padding: 16px 16px 80px; }
     .screen { display: none; }
     .screen.active { display: block; }
 
     /* Loading */
-    #loadingScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+    #loadingScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; text-align: center; }
     .spinner { width: 48px; height: 48px; border: 4px solid var(--card2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -42,7 +36,7 @@
 
     /* Crash display */
     .crash-box { background: var(--card); border-radius: var(--radius); padding: 24px; text-align: center; }
-    .multiplier { font-size: 72px; font-weight: 900; background: linear-gradient(135deg, #00d4ff, #3a7bd5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; transition: transform 0.1s; }
+    .multiplier { font-size: 72px; font-weight: 900; background: linear-gradient(135deg, #00d4ff, #3a7bd5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .multiplier.crashed { background: linear-gradient(135deg, #ff4757, #ff6b81); -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shake 0.5s; }
     @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
     .phase { color: var(--text2); margin: 8px 0 16px; font-size: 14px; }
@@ -76,14 +70,16 @@
     .bottom-nav { position: fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; background: rgba(7,11,20,0.9); backdrop-filter:blur(20px); display:flex; justify-content:space-around; padding:8px 0 env(safe-area-inset-bottom); border-top:1px solid rgba(255,255,255,0.05); }
     .nav-btn { background:none; border:none; color:var(--text2); font-weight:600; padding:8px 16px; cursor:pointer; }
     .nav-btn.active { color:var(--accent); }
+
+    .error-message { color: var(--danger); margin-top: 16px; max-width: 90%; }
   </style>
 </head>
 <body>
   <div class="app">
-    <!-- Loading -->
+    <!-- Loading screen (shown while Firebase connects) -->
     <div id="loadingScreen">
       <div class="spinner"></div>
-      <p style="margin-top:16px; color:var(--text2)">Connecting...</p>
+      <p id="loadingText" style="margin-top:16px; color:var(--text2)">Initializing Firebase...</p>
     </div>
 
     <!-- Game Screen -->
@@ -153,8 +149,9 @@
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+    // ============================ CONFIGURATION ============================
+    // 1. Paste your Firebase config from Project settings → General → Web app
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
     import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
     // ==================== CONFIGURATION ====================
     // 1. Replace with your Firebase project config (from Firebase Console)
@@ -168,14 +165,13 @@
     measurementId: "G-G02J4VPGN2"
   };
 
-
     // 2. Replace with your real bot token from @BotFather
     const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
 
     // 3. Add your Telegram user IDs as admins
     const ADMIN_IDS = ['8033727736', '987654321'];
 
-    // ==================== INITIALIZATION ====================
+    // ============================ INITIALIZATION ============================
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
@@ -183,21 +179,31 @@
     tg.ready();
     tg.expand();
 
-    // Extract user from Telegram initData (or use demo for browser testing)
+    // Extract user from Telegram initData (or fallback for browser testing)
     let currentUser = null;
     try {
       const params = new URLSearchParams(tg.initData);
       currentUser = JSON.parse(params.get('user'));
     } catch(e) {}
     if (!currentUser) {
-      // Fallback for testing outside Telegram (remove in production)
+      // Only used for testing outside Telegram – remove in production
       currentUser = { id: 123456789, first_name: 'Demo', username: 'demo', photo_url: '' };
     }
     const userId = String(currentUser.id);
     const userRef = db.collection('users').doc(userId);
     const isAdmin = ADMIN_IDS.includes(userId);
 
-    // ==================== UI HELPERS ====================
+    // ============================ LOADING HANDLER ============================
+    const loadingScreen = document.getElementById('loadingScreen');
+    const loadingText = document.getElementById('loadingText');
+
+    // Show an error if something fails
+    function showError(message) {
+      loadingText.textContent = '';
+      loadingScreen.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+    }
+
+    // ============================ UI HELPERS ============================
     let userBalance = 0;
 
     function updateBalanceDisplay() {
@@ -206,24 +212,32 @@
     }
 
     async function loadUserData() {
-      const doc = await userRef.get();
-      if (!doc.exists) {
-        await userRef.set({
-          id: userId,
-          username: currentUser.username || '',
-          firstName: currentUser.first_name || '',
-          photoUrl: currentUser.photo_url || '',
-          balance: 0,
-          gamesPlayed: 0,
-          wins: 0,
-          losses: 0,
-          totalWagered: 0
-        });
+      try {
+        loadingText.textContent = 'Loading user data...';
+        const doc = await userRef.get();
+        if (!doc.exists) {
+          await userRef.set({
+            id: userId,
+            username: currentUser.username || '',
+            firstName: currentUser.first_name || '',
+            photoUrl: currentUser.photo_url || '',
+            balance: 0,
+            gamesPlayed: 0,
+            wins: 0,
+            losses: 0,
+            totalWagered: 0
+          });
+        }
+        const data = (await userRef.get()).data();
+        userBalance = data.balance;
+        updateBalanceDisplay();
+        fillProfile(data);
+        return true;
+      } catch (err) {
+        console.error(err);
+        showError('Firebase connection failed. Make sure Firestore is enabled (not just Realtime Database). Check the browser console for details.');
+        return false;
       }
-      const data = (await userRef.get()).data();
-      userBalance = data.balance;
-      updateBalanceDisplay();
-      fillProfile(data);
     }
 
     function fillProfile(data) {
@@ -242,7 +256,7 @@
       updateBalanceDisplay();
     }
 
-    // ==================== SCREEN SWITCHING ====================
+    // ============================ SCREEN SWITCHING ============================
     const screens = ['game', 'profile', 'withdraw', 'admin'];
     function showScreen(id) {
       screens.forEach(s => document.getElementById(s + 'Screen').classList.remove('active'));
@@ -262,10 +276,9 @@
       showScreen(btn.dataset.screen);
     });
 
-    // Show admin nav button if admin
     if (isAdmin) document.getElementById('adminNavBtn').style.display = 'block';
 
-    // ==================== CRASH GAME ENGINE ====================
+    // ============================ CRASH GAME ENGINE ============================
     const game = {
       phase: 'betting',
       multiplier: 1.0,
@@ -284,7 +297,6 @@
     const crashHistoryEl = document.getElementById('crashHistory');
 
     function generateCrashPoint() {
-      // 5% house edge, 1% instant crash
       if (Math.random() < 0.01) return 1.00;
       const r = Math.random();
       const raw = 0.99 / (1 - r);
@@ -364,7 +376,6 @@
       });
 
       if (game.hasBet) {
-        // User lost
         await userRef.update({
           gamesPlayed: firebase.firestore.FieldValue.increment(1),
           losses: firebase.firestore.FieldValue.increment(1),
@@ -377,7 +388,6 @@
       setTimeout(() => startNewRound(), 5000);
     }
 
-    // Bet button
     placeBetBtn.addEventListener('click', async () => {
       if (game.phase !== 'betting') return;
       const amount = parseInt(betInput.value);
@@ -386,14 +396,12 @@
 
       game.betAmount = amount;
       game.hasBet = true;
-      // Deduct balance atomically
       await userRef.update({ balance: firebase.firestore.FieldValue.increment(-amount) });
       await refreshBalance();
       placeBetBtn.disabled = true;
       betInput.disabled = true;
     });
 
-    // Cashout button
     cashoutBtn.addEventListener('click', async () => {
       if (!game.hasBet || game.phase !== 'running') return;
       const payout = Math.floor(game.betAmount * game.multiplier);
@@ -410,7 +418,7 @@
       alert(`Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars`);
     });
 
-    // ==================== TOP-UP (Stars Invoice) ====================
+    // ============================ TOP-UP (Stars Invoice) ============================
     document.getElementById('topupBtn').addEventListener('click', () => {
       const amount = parseInt(prompt('Stars amount (min 1):', '50'));
       if (!amount || amount < 1) return;
@@ -444,7 +452,7 @@
       .catch(() => alert('Network error. Check your bot token.'));
     });
 
-    // ==================== WITHDRAWAL ====================
+    // ============================ WITHDRAWAL ============================
     document.getElementById('withdrawRequestBtn').addEventListener('click', async () => {
       const amount = parseInt(document.getElementById('withdrawAmount').value);
       const statusEl = document.getElementById('withdrawStatus');
@@ -453,7 +461,6 @@
 
       statusEl.textContent = 'Processing...';
       try {
-        // Use a Firestore transaction to deduct balance and create request
         await db.runTransaction(async (t) => {
           const userDoc = await t.get(userRef);
           const currentBal = userDoc.data().balance;
@@ -475,7 +482,7 @@
       }
     });
 
-    // ==================== ADMIN PANEL ====================
+    // ============================ ADMIN PANEL ============================
     function loadPendingWithdrawals() {
       if (!isAdmin) return;
       db.collection('withdrawals')
@@ -505,27 +512,30 @@
     };
 
     window.rejectWd = async (wdId, uid, amount) => {
-      // Refund balance
       await db.collection('withdrawals').doc(wdId).update({ status: 'rejected' });
-      await db.collection('users').doc(uid).update({
-        balance: firebase.firestore.FieldValue.increment(amount)
-      });
+      await db.collection('users').doc(uid).update({ balance: firebase.firestore.FieldValue.increment(amount) });
     };
 
-    // ==================== LOAD HISTORY FROM FIRESTORE ====================
+    // ============================ LOAD HISTORY ============================
     async function loadHistoryFromDb() {
-      const snap = await db.collection('gameHistory')
-        .orderBy('timestamp', 'desc')
-        .limit(20)
-        .get();
-      snap.forEach(doc => addCrashHistory(doc.data().crashPoint));
+      try {
+        const snap = await db.collection('gameHistory')
+          .orderBy('timestamp', 'desc')
+          .limit(20)
+          .get();
+        snap.forEach(doc => addCrashHistory(doc.data().crashPoint));
+      } catch(e) { /* ignore */ }
     }
 
-    // ==================== START EVERYTHING ====================
+    // ============================ START EVERYTHING ============================
     (async () => {
-      await loadUserData();
+      // Wait a short time to see if Firebase initializes
+      loadingText.textContent = 'Connecting to Firebase...';
+      const success = await loadUserData();
+      if (!success) return;
+
       await loadHistoryFromDb();
-      document.getElementById('loadingScreen').style.display = 'none';
+      loadingScreen.style.display = 'none';
       showScreen('game');
       startNewRound();
     })();
