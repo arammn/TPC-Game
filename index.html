@@ -5,281 +5,100 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="telegram-web-app" content="yes">
   <title>Crash Game</title>
-  <!-- Firebase SDK (minimal) -->
+  <!-- Firebase SDK (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     :root {
-      --bg: #0a0a0f;
-      --card: #12121c;
-      --card2: #1a1a2e;
-      --text: #ffffff;
-      --text2: #a0a0b0;
-      --accent: #00d2ff;
+      --bg: #070b14;
+      --card: #101524;
+      --card2: #1a1f33;
+      --text: #fff;
+      --text2: #99a0b8;
+      --accent: #00d4ff;
       --danger: #ff4757;
       --success: #2ed573;
       --radius: 16px;
-      --shadow: 0 0 20px rgba(0,210,255,0.08);
     }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      overflow-x: hidden;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .app {
-      max-width: 480px;
-      margin: 0 auto;
-      padding: 16px 16px 80px;
-      position: relative;
-      min-height: 100vh;
-    }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; user-select: none; -webkit-tap-highlight-color: transparent; }
+    .app { max-width: 480px; margin: 0 auto; padding: 16px 16px 80px; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+
     /* Loading */
-    .loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 80vh;
-    }
-    .spinner {
-      width: 48px; height: 48px;
-      border: 4px solid var(--card2);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
+    #loadingScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+    .spinner { width: 48px; height: 48px; border: 4px solid var(--card2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Header */
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-    }
-    .balance {
-      font-size: 18px;
-      font-weight: 700;
-      background: var(--card);
-      padding: 8px 16px;
-      border-radius: 40px;
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-    .btn {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 40px;
-      font-weight: 700;
-      font-size: 15px;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .btn:active { transform: scale(0.96); }
-    .btn:disabled { opacity: 0.4; }
-    .btn-sm { padding: 8px 16px; font-size: 14px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .balance { background: var(--card); padding: 8px 16px; border-radius: 40px; font-weight: 600; }
+    button { border: none; background: var(--accent); color: #000; padding: 10px 18px; border-radius: 40px; font-weight: 700; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+    button:active { transform: scale(0.96); }
+    button:disabled { opacity: 0.4; pointer-events: none; }
     .btn-success { background: var(--success); color: #000; }
     .btn-danger { background: var(--danger); color: #fff; }
 
     /* Crash display */
-    .crash-screen {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 24px;
-      text-align: center;
-      box-shadow: var(--shadow);
-    }
-    .multiplier {
-      font-size: 72px;
-      font-weight: 900;
-      background: linear-gradient(135deg, #00d2ff, #3a7bd5);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      transition: transform 0.1s ease;
-    }
-    .multiplier.crashed {
-      background: linear-gradient(135deg, #ff4757, #ff6b81);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: shake 0.5s ease;
-    }
-    @keyframes shake {
-      0%,100%{transform:translateX(0);}
-      20%{transform:translateX(-8px);}
-      40%{transform:translateX(8px);}
-      60%{transform:translateX(-4px);}
-      80%{transform:translateX(4px);}
-    }
-    .phase {
-      color: var(--text2);
-      font-size: 14px;
-      margin: 8px 0 16px;
-    }
-    .bet-row {
-      display: flex;
-      gap: 8px;
-      margin-top: 16px;
-    }
-    .bet-row input {
-      flex:1;
-      background: var(--card2);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 40px;
-      padding: 12px 16px;
-      color: #fff;
-      font-size: 16px;
-    }
+    .crash-box { background: var(--card); border-radius: var(--radius); padding: 24px; text-align: center; }
+    .multiplier { font-size: 72px; font-weight: 900; background: linear-gradient(135deg, #00d4ff, #3a7bd5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; transition: transform 0.1s; }
+    .multiplier.crashed { background: linear-gradient(135deg, #ff4757, #ff6b81); -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: shake 0.5s; }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
+    .phase { color: var(--text2); margin: 8px 0 16px; font-size: 14px; }
+    .bet-row { display: flex; gap: 8px; margin-top: 16px; }
+    .bet-row input { flex:1; background: var(--card2); border: 1px solid rgba(255,255,255,0.1); border-radius: 40px; padding: 12px 16px; color:#fff; font-size:16px; }
 
-    /* Game history */
-    .history {
-      margin-top: 24px;
-    }
-    .history h3 {
-      font-size: 16px;
-      margin-bottom: 12px;
-      color: var(--text2);
-    }
-    .history-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .history-item {
-      background: var(--card);
-      border-radius: 20px;
-      padding: 6px 14px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.05);
-    }
+    /* History */
+    .history { margin-top: 24px; }
+    .history h3 { color: var(--text2); margin-bottom:12px; }
+    .history-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .history-item { background: var(--card); border-radius: 20px; padding: 4px 12px; font-size: 14px; font-weight:600; }
     .history-item.crashed { color: var(--danger); }
 
-    /* Bottom nav */
-    .bottom-nav {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background: rgba(10,10,15,0.95);
-      backdrop-filter: blur(20px);
-      display: flex;
-      justify-content: space-around;
-      padding: 8px 0 env(safe-area-inset-bottom);
-      border-top: 1px solid rgba(255,255,255,0.05);
-      max-width: 480px;
-      margin: 0 auto;
-    }
-    .nav-btn {
-      background: none;
-      border: none;
-      color: var(--text2);
-      font-size: 13px;
-      font-weight: 600;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      cursor: pointer;
-      padding: 8px 16px;
-    }
-    .nav-btn.active { color: var(--accent); }
-
-    /* Panels */
-    .panel { display: none; }
-    .panel.active { display: block; }
-
-    /* Profile card */
-    .profile-card {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-    .profile-card img {
-      width: 64px; height: 64px;
-      border-radius: 50%;
-      border: 2px solid var(--accent);
-    }
-    .stat-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .stat-item {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 14px;
-      text-align: center;
-    }
-    .stat-item .num { font-size: 22px; font-weight: 700; color: var(--accent); }
-    .stat-item .label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+    /* Profile */
+    .profile-card { background: var(--card); border-radius: var(--radius); padding: 20px; display: flex; gap:16px; align-items: center; margin-bottom: 20px; }
+    .profile-card img { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--accent); }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .stat-item { background: var(--card); border-radius: var(--radius); padding: 14px; text-align: center; }
+    .stat-item .num { font-size: 22px; font-weight:700; color:var(--accent); }
+    .stat-item .label { font-size:12px; color:var(--text2); }
 
     /* Withdraw */
-    .withdraw-form input {
-      width: 100%;
-      padding: 14px;
-      background: var(--card2);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 40px;
-      color: #fff;
-      font-size: 16px;
-      margin-bottom: 12px;
-    }
-    .status-msg { margin-top: 8px; font-weight: 600; }
+    .withdraw-box input { width: 100%; padding:14px; background: var(--card2); border:1px solid rgba(255,255,255,0.1); border-radius: 40px; color:#fff; font-size:16px; margin-bottom:12px; }
+    .status-msg { margin-top:8px; font-weight:600; }
 
-    /* Admin table */
-    .withdrawals-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 16px;
-    }
-    .withdrawal-card {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 16px;
-    }
-    .withdrawal-card .actions { display: flex; gap: 8px; margin-top: 8px; }
+    /* Admin */
+    .wd-card { background: var(--card); border-radius: var(--radius); padding:14px; margin-bottom:10px; }
+    .wd-card .actions { display: flex; gap:8px; margin-top:8px; }
 
-    /* Responsive adjustments */
-    @media (max-width: 380px) {
-      .multiplier { font-size: 56px; }
-    }
+    /* Bottom nav */
+    .bottom-nav { position: fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px; background: rgba(7,11,20,0.9); backdrop-filter:blur(20px); display:flex; justify-content:space-around; padding:8px 0 env(safe-area-inset-bottom); border-top:1px solid rgba(255,255,255,0.05); }
+    .nav-btn { background:none; border:none; color:var(--text2); font-weight:600; padding:8px 16px; cursor:pointer; }
+    .nav-btn.active { color:var(--accent); }
   </style>
 </head>
 <body>
-  <div class="app" id="app">
+  <div class="app">
     <!-- Loading -->
-    <div id="loading" class="loading">
+    <div id="loadingScreen">
       <div class="spinner"></div>
-      <p style="margin-top:16px; color:var(--text2);">Connecting to Firebase...</p>
+      <p style="margin-top:16px; color:var(--text2)">Connecting...</p>
     </div>
 
-    <!-- All panels are inside .app -->
-    <!-- GAME PANEL -->
-    <div id="gamePanel" class="panel">
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen">
       <div class="header">
         <div class="balance">⭐ <span id="balanceGame">0</span></div>
-        <button class="btn btn-sm" id="topupBtn">+ Top Up</button>
+        <button id="topupBtn">+ Top Up</button>
       </div>
-      <div class="crash-screen">
+      <div class="crash-box">
         <div class="multiplier" id="multiplierDisplay">1.00x</div>
         <div class="phase" id="phaseDisplay">Betting: 15s</div>
         <div class="bet-row">
-          <input type="number" id="betAmount" placeholder="Bet amount" min="1">
-          <button class="btn" id="placeBetBtn">Bet</button>
-          <button class="btn btn-success" id="cashoutBtn" disabled>Cash Out</button>
+          <input type="number" id="betAmount" placeholder="Bet amount" min="1" inputmode="numeric">
+          <button id="placeBetBtn">Bet</button>
+          <button id="cashoutBtn" class="btn-success" disabled>Cash Out</button>
         </div>
       </div>
       <div class="history">
@@ -288,17 +107,17 @@
       </div>
     </div>
 
-    <!-- PROFILE PANEL -->
-    <div id="profilePanel" class="panel">
+    <!-- Profile Screen -->
+    <div id="profileScreen" class="screen">
       <div class="profile-card">
         <img id="profileAvatar" src="" alt="Avatar">
         <div>
           <h2 id="profileName">User</h2>
           <p style="color:var(--text2);" id="profileUsername"></p>
-          <p style="font-size:18px; margin-top:4px;">⭐ <span id="profileBalance">0</span> Stars</p>
+          <p style="font-size:18px; margin-top:4px;">⭐ <span id="profileBalance">0</span></p>
         </div>
       </div>
-      <div class="stat-grid">
+      <div class="stats">
         <div class="stat-item"><div class="num" id="gamesPlayed">0</div><div class="label">Games</div></div>
         <div class="stat-item"><div class="num" id="wins">0</div><div class="label">Wins</div></div>
         <div class="stat-item"><div class="num" id="losses">0</div><div class="label">Losses</div></div>
@@ -306,46 +125,40 @@
       </div>
     </div>
 
-    <!-- WITHDRAW PANEL -->
-    <div id="withdrawPanel" class="panel">
+    <!-- Withdraw Screen -->
+    <div id="withdrawScreen" class="screen">
       <h2 style="margin-bottom:16px;">💸 Withdraw Stars</h2>
-      <p style="color:var(--text2); margin-bottom:12px;">Minimum withdrawal: 100 Stars. Request will be reviewed by admin.</p>
-      <div class="withdraw-form">
-        <input type="number" id="withdrawAmount" placeholder="Amount">
-        <button class="btn" id="withdrawRequestBtn">Request Withdrawal</button>
+      <p style="color:var(--text2); margin-bottom:12px;">Minimum withdrawal: 100 ⭐</p>
+      <div class="withdraw-box">
+        <input type="number" id="withdrawAmount" placeholder="Amount" inputmode="numeric">
+        <button id="withdrawRequestBtn">Request Withdrawal</button>
         <div class="status-msg" id="withdrawStatus"></div>
       </div>
     </div>
 
-    <!-- ADMIN PANEL (hidden unless user is admin) -->
-    <div id="adminPanel" class="panel">
-      <h2 style="margin-bottom:16px;">🔧 Admin Panel</h2>
-      <div id="pendingWithdrawals" class="withdrawals-list">
-        <p style="color:var(--text2);">Loading withdrawals...</p>
-      </div>
+    <!-- Admin Screen (hidden unless admin) -->
+    <div id="adminScreen" class="screen">
+      <h2 style="margin-bottom:16px;">⚙️ Admin Panel</h2>
+      <div id="pendingWithdrawals">Loading...</div>
     </div>
 
     <!-- Bottom Navigation -->
     <div class="bottom-nav" id="bottomNav">
-      <button class="nav-btn active" data-panel="game">🎮 Game</button>
-      <button class="nav-btn" data-panel="profile">👤 Profile</button>
-      <button class="nav-btn" data-panel="withdraw">💸 Withdraw</button>
-      <button class="nav-btn" data-panel="admin" id="adminNavBtn" style="display:none;">⚙️ Admin</button>
+      <button class="nav-btn active" data-screen="game">🎮 Game</button>
+      <button class="nav-btn" data-screen="profile">👤 Profile</button>
+      <button class="nav-btn" data-screen="withdraw">💸 Withdraw</button>
+      <button class="nav-btn" data-screen="admin" id="adminNavBtn" style="display:none;">⚙️ Admin</button>
     </div>
   </div>
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    // ==================== FIREBASE CONFIG ====================
-    const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
 
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
+    // ==================== CONFIGURATION ====================
+    // 1. Replace with your Firebase project config (from Firebase Console)
+     const firebaseConfig = {
     apiKey: "AIzaSyDojI9M44G315oc4j_i-BgPMwK2ndnKjPw",
     authDomain: "babaykagames-7b857.firebaseapp.com",
     projectId: "babaykagames-7b857",
@@ -355,35 +168,44 @@
     measurementId: "G-G02J4VPGN2"
   };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
 
+    // 2. Replace with your real bot token from @BotFather
+    const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
+
+    // 3. Add your Telegram user IDs as admins
+    const ADMIN_IDS = ['8033727736', '987654321'];
+
+    // ==================== INITIALIZATION ====================
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // ==================== TELEGRAM INIT ====================
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
+    // Extract user from Telegram initData (or use demo for browser testing)
     let currentUser = null;
     try {
       const params = new URLSearchParams(tg.initData);
       currentUser = JSON.parse(params.get('user'));
     } catch(e) {}
     if (!currentUser) {
-      // fallback for testing outside Telegram
+      // Fallback for testing outside Telegram (remove in production)
       currentUser = { id: 123456789, first_name: 'Demo', username: 'demo', photo_url: '' };
     }
     const userId = String(currentUser.id);
-    const ADMIN_IDS = ['123456789', '987654321']; // replace with real admin Telegram IDs
-
-    // ==================== HELPERS ====================
-    let userBalance = 0;
     const userRef = db.collection('users').doc(userId);
+    const isAdmin = ADMIN_IDS.includes(userId);
 
-    async function createUserIfNeeded() {
+    // ==================== UI HELPERS ====================
+    let userBalance = 0;
+
+    function updateBalanceDisplay() {
+      document.getElementById('balanceGame').textContent = userBalance;
+      document.getElementById('profileBalance').textContent = userBalance;
+    }
+
+    async function loadUserData() {
       const doc = await userRef.get();
       if (!doc.exists) {
         await userRef.set({
@@ -398,20 +220,13 @@
           totalWagered: 0
         });
       }
-      // fetch latest data
-      const snap = await userRef.get();
-      const data = snap.data();
+      const data = (await userRef.get()).data();
       userBalance = data.balance;
-      updateAllBalances();
-      updateProfileUI(data);
+      updateBalanceDisplay();
+      fillProfile(data);
     }
 
-    function updateAllBalances() {
-      document.getElementById('balanceGame').textContent = userBalance;
-      document.getElementById('profileBalance').textContent = userBalance;
-    }
-
-    function updateProfileUI(data) {
+    function fillProfile(data) {
       document.getElementById('profileAvatar').src = data.photoUrl || 'https://via.placeholder.com/64';
       document.getElementById('profileName').textContent = data.firstName || 'User';
       document.getElementById('profileUsername').textContent = data.username ? '@'+data.username : '';
@@ -424,18 +239,41 @@
     async function refreshBalance() {
       const snap = await userRef.get();
       userBalance = snap.data().balance;
-      updateAllBalances();
+      updateBalanceDisplay();
     }
 
-    // ==================== GAME ENGINE ====================
+    // ==================== SCREEN SWITCHING ====================
+    const screens = ['game', 'profile', 'withdraw', 'admin'];
+    function showScreen(id) {
+      screens.forEach(s => document.getElementById(s + 'Screen').classList.remove('active'));
+      document.getElementById(id + 'Screen').classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.remove('active');
+        if (b.dataset.screen === id) b.classList.add('active');
+      });
+      if (id === 'profile') {
+        userRef.get().then(snap => fillProfile(snap.data()));
+      }
+      if (id === 'admin') loadPendingWithdrawals();
+    }
+    document.getElementById('bottomNav').addEventListener('click', (e) => {
+      const btn = e.target.closest('.nav-btn');
+      if (!btn) return;
+      showScreen(btn.dataset.screen);
+    });
+
+    // Show admin nav button if admin
+    if (isAdmin) document.getElementById('adminNavBtn').style.display = 'block';
+
+    // ==================== CRASH GAME ENGINE ====================
     const game = {
-      phase: 'betting',   // betting, running, crashed, cooldown
-      multiplier: 1.00,
-      crashPoint: 1.00,
+      phase: 'betting',
+      multiplier: 1.0,
+      crashPoint: 1.0,
       betAmount: 0,
       hasBet: false,
-      intervalId: null,
       countdownTimer: null,
+      runTimer: null
     };
 
     const multiplierEl = document.getElementById('multiplierDisplay');
@@ -446,30 +284,31 @@
     const crashHistoryEl = document.getElementById('crashHistory');
 
     function generateCrashPoint() {
-      // 5% house edge, range 1.00x ~ 50x
+      // 5% house edge, 1% instant crash
       if (Math.random() < 0.01) return 1.00;
       const r = Math.random();
       const raw = 0.99 / (1 - r);
-      const withHouse = raw * 0.95;
-      return Math.max(1.01, Math.round(withHouse * 100) / 100);
+      const withEdge = raw * 0.95;
+      return Math.max(1.00, Math.round(withEdge * 100) / 100);
     }
 
-    function addCrashToHistory(cp) {
+    function addCrashHistory(cp) {
       const item = document.createElement('span');
       item.className = 'history-item' + (cp < 1.2 ? ' crashed' : '');
       item.textContent = cp.toFixed(2) + 'x';
       crashHistoryEl.prepend(item);
-      // Keep only 20
-      while (crashHistoryEl.children.length > 20) {
-        crashHistoryEl.removeChild(crashHistoryEl.lastChild);
-      }
+      while (crashHistoryEl.children.length > 20) crashHistoryEl.lastChild.remove();
+    }
+
+    function clearGameTimers() {
+      if (game.countdownTimer) clearInterval(game.countdownTimer);
+      if (game.runTimer) clearInterval(game.runTimer);
     }
 
     async function startNewRound() {
-      clearInterval(game.intervalId);
-      clearInterval(game.countdownTimer);
+      clearGameTimers();
       game.phase = 'betting';
-      game.multiplier = 1.00;
+      game.multiplier = 1.0;
       game.hasBet = false;
       game.betAmount = 0;
       game.crashPoint = generateCrashPoint();
@@ -478,9 +317,9 @@
       cashoutBtn.disabled = true;
       placeBetBtn.disabled = false;
       betInput.disabled = false;
-      phaseEl.textContent = 'Betting: 15s';
 
       let sec = 15;
+      phaseEl.textContent = `Betting: ${sec}s`;
       game.countdownTimer = setInterval(() => {
         sec--;
         if (sec <= 0) {
@@ -499,13 +338,13 @@
       betInput.disabled = true;
       if (game.hasBet) cashoutBtn.disabled = false;
 
-      let mult = 1.00;
-      game.intervalId = setInterval(() => {
-        mult = Math.round((mult + 0.02) * 100) / 100;
+      let mult = 1.0;
+      game.runTimer = setInterval(() => {
+        mult = Math.round((mult + 0.03) * 100) / 100;
         game.multiplier = mult;
         multiplierEl.textContent = mult.toFixed(2) + 'x';
         if (mult >= game.crashPoint) {
-          clearInterval(game.intervalId);
+          clearInterval(game.runTimer);
           crash();
         }
       }, 100);
@@ -515,17 +354,16 @@
       game.phase = 'crashed';
       multiplierEl.textContent = game.crashPoint.toFixed(2) + 'x';
       multiplierEl.classList.add('crashed');
-      phaseEl.textContent = 'Crashed!';
-      addCrashToHistory(game.crashPoint);
+      phaseEl.textContent = `Crashed at ${game.crashPoint.toFixed(2)}x`;
+      addCrashHistory(game.crashPoint);
 
-      // Save round to Firestore (optional)
+      // Save history to Firestore
       db.collection('gameHistory').add({
         crashPoint: game.crashPoint,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
 
       if (game.hasBet) {
-        game.hasBet = false;
         // User lost
         await userRef.update({
           gamesPlayed: firebase.firestore.FieldValue.increment(1),
@@ -533,33 +371,31 @@
           totalWagered: firebase.firestore.FieldValue.increment(game.betAmount)
         });
         refreshBalance();
-        alert(`😵 Lost ${game.betAmount} Stars at ${game.crashPoint.toFixed(2)}x`);
+        alert(`Lost ${game.betAmount} Stars!`);
       }
-
       cashoutBtn.disabled = true;
       setTimeout(() => startNewRound(), 5000);
     }
 
+    // Bet button
     placeBetBtn.addEventListener('click', async () => {
       if (game.phase !== 'betting') return;
       const amount = parseInt(betInput.value);
-      if (!amount || amount <= 0 || amount > userBalance) {
-        alert('Invalid amount or not enough balance.');
-        return;
-      }
+      if (!amount || amount <= 0) return alert('Enter a valid amount');
+      if (amount > userBalance) return alert('Insufficient balance');
+
       game.betAmount = amount;
       game.hasBet = true;
-      // Deduct balance immediately
-      await userRef.update({
-        balance: firebase.firestore.FieldValue.increment(-amount)
-      });
-      refreshBalance();
+      // Deduct balance atomically
+      await userRef.update({ balance: firebase.firestore.FieldValue.increment(-amount) });
+      await refreshBalance();
       placeBetBtn.disabled = true;
       betInput.disabled = true;
     });
 
+    // Cashout button
     cashoutBtn.addEventListener('click', async () => {
-      if (game.phase !== 'running' || !game.hasBet) return;
+      if (!game.hasBet || game.phase !== 'running') return;
       const payout = Math.floor(game.betAmount * game.multiplier);
       game.hasBet = false;
       cashoutBtn.disabled = true;
@@ -571,21 +407,21 @@
         totalWagered: firebase.firestore.FieldValue.increment(game.betAmount)
       });
       refreshBalance();
-      alert(`💰 Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars`);
+      alert(`Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars`);
     });
 
-    // ==================== TOP UP (Stars Invoice) ====================
+    // ==================== TOP-UP (Stars Invoice) ====================
     document.getElementById('topupBtn').addEventListener('click', () => {
-      const amount = parseInt(prompt('Stars amount to buy (e.g., 50):', '50'));
-      if (!amount || amount <= 0) return;
-      // Using Bot API – token needs to be set
-      fetch(`https://api.telegram.org/botYOUR_BOT_TOKEN/createInvoiceLink`, {
+      const amount = parseInt(prompt('Stars amount (min 1):', '50'));
+      if (!amount || amount < 1) return;
+
+      fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Stars Top-Up',
           description: `Add ${amount} Stars`,
-          payload: JSON.stringify({ userId, type: 'topup', amount }),
+          payload: JSON.stringify({ userId, amount }),
           currency: 'XTR',
           prices: [{ label: 'Stars', amount }],
           provider_token: ''
@@ -596,39 +432,34 @@
         if (data.ok) {
           tg.openInvoice(data.result, async (status) => {
             if (status === 'paid') {
-              await userRef.update({
-                balance: firebase.firestore.FieldValue.increment(amount)
-              });
+              await userRef.update({ balance: firebase.firestore.FieldValue.increment(amount) });
               refreshBalance();
               alert('✅ Stars added!');
             }
           });
-        } else alert('Failed to create invoice: ' + data.description);
-      });
+        } else {
+          alert('Invoice error: ' + data.description);
+        }
+      })
+      .catch(() => alert('Network error. Check your bot token.'));
     });
 
     // ==================== WITHDRAWAL ====================
     document.getElementById('withdrawRequestBtn').addEventListener('click', async () => {
       const amount = parseInt(document.getElementById('withdrawAmount').value);
-      if (!amount || amount < 100) {
-        document.getElementById('withdrawStatus').textContent = 'Minimum withdrawal is 100 Stars.';
-        return;
-      }
-      if (amount > userBalance) {
-        document.getElementById('withdrawStatus').textContent = 'Insufficient balance.';
-        return;
-      }
       const statusEl = document.getElementById('withdrawStatus');
-      statusEl.textContent = 'Processing...';
+      if (!amount || amount < 100) return statusEl.textContent = 'Minimum withdrawal is 100 Stars.';
+      if (amount > userBalance) return statusEl.textContent = 'Insufficient balance.';
 
+      statusEl.textContent = 'Processing...';
       try {
-        // Deduct balance, create withdrawal doc
-        await db.runTransaction(async (transaction) => {
-          const userSnap = await transaction.get(userRef);
-          const currentBal = userSnap.data().balance;
+        // Use a Firestore transaction to deduct balance and create request
+        await db.runTransaction(async (t) => {
+          const userDoc = await t.get(userRef);
+          const currentBal = userDoc.data().balance;
           if (currentBal < amount) throw new Error('Insufficient balance');
-          transaction.update(userRef, { balance: currentBal - amount });
-          transaction.set(db.collection('withdrawals').doc(), {
+          t.update(userRef, { balance: currentBal - amount });
+          t.set(db.collection('withdrawals').doc(), {
             userId,
             username: currentUser.username || currentUser.first_name,
             amount,
@@ -636,7 +467,7 @@
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
         });
-        statusEl.textContent = '✅ Withdrawal request submitted. Admin will review it.';
+        statusEl.textContent = '✅ Request submitted. Admins will review.';
         refreshBalance();
         document.getElementById('withdrawAmount').value = '';
       } catch (e) {
@@ -645,11 +476,6 @@
     });
 
     // ==================== ADMIN PANEL ====================
-    const isAdmin = ADMIN_IDS.includes(userId);
-    if (isAdmin) {
-      document.getElementById('adminNavBtn').style.display = 'flex';
-    }
-
     function loadPendingWithdrawals() {
       if (!isAdmin) return;
       db.collection('withdrawals')
@@ -658,73 +484,50 @@
         .onSnapshot(snapshot => {
           const container = document.getElementById('pendingWithdrawals');
           container.innerHTML = '';
+          if (snapshot.empty) { container.innerHTML = '<p style="color:var(--text2)">No pending withdrawals.</p>'; return; }
           snapshot.forEach(doc => {
             const w = doc.data();
             container.innerHTML += `
-              <div class="withdrawal-card">
+              <div class="wd-card">
                 <strong>${w.username}</strong> (ID: ${w.userId})<br>
-                Amount: <b>${w.amount} ⭐</b><br>
+                Amount: <b>${w.amount} ⭐</b>
                 <div class="actions">
-                  <button class="btn btn-sm btn-success" onclick="approveWithdrawal('${doc.id}', '${w.userId}', ${w.amount})">Approve</button>
-                  <button class="btn btn-sm btn-danger" onclick="rejectWithdrawal('${doc.id}', '${w.userId}', ${w.amount})">Reject</button>
+                  <button class="btn-success" onclick="window.approveWd('${doc.id}')">Approve</button>
+                  <button class="btn-danger" onclick="window.rejectWd('${doc.id}', '${w.userId}', ${w.amount})">Reject</button>
                 </div>
               </div>`;
           });
         });
     }
 
-    window.approveWithdrawal = async (wdId, uid, amount) => {
+    window.approveWd = async (wdId) => {
       await db.collection('withdrawals').doc(wdId).update({ status: 'approved' });
-      // (Optional) send a message via bot – for now just update status
-      alert(`Withdrawal ${wdId} approved.`);
     };
 
-    window.rejectWithdrawal = async (wdId, uid, amount) => {
+    window.rejectWd = async (wdId, uid, amount) => {
       // Refund balance
       await db.collection('withdrawals').doc(wdId).update({ status: 'rejected' });
       await db.collection('users').doc(uid).update({
         balance: firebase.firestore.FieldValue.increment(amount)
       });
-      alert(`Withdrawal ${wdId} rejected. Balance refunded.`);
     };
 
-    if (isAdmin) {
-      loadPendingWithdrawals();
-    }
-
-    // ==================== NAVIGATION ====================
-    const panels = ['game', 'profile', 'withdraw', 'admin'];
-    function switchPanel(panel) {
-      panels.forEach(p => document.getElementById(p + 'Panel').classList.remove('active'));
-      document.getElementById(panel + 'Panel').classList.add('active');
-      document.querySelectorAll('.nav-btn').forEach(b => {
-        b.classList.remove('active');
-        if (b.dataset.panel === panel) b.classList.add('active');
-      });
-      if (panel === 'profile') {
-        userRef.get().then(snap => updateProfileUI(snap.data()));
-        refreshBalance();
-      }
-    }
-
-    document.getElementById('bottomNav').addEventListener('click', (e) => {
-      const btn = e.target.closest('.nav-btn');
-      if (!btn) return;
-      switchPanel(btn.dataset.panel);
-    });
-
-    // ==================== START APP ====================
-    (async function init() {
-      await createUserIfNeeded();
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('gamePanel').classList.add('active');
-      startNewRound();
-      // Prepopulate history from Firestore (last 20)
-      const snapshot = await db.collection('gameHistory')
+    // ==================== LOAD HISTORY FROM FIRESTORE ====================
+    async function loadHistoryFromDb() {
+      const snap = await db.collection('gameHistory')
         .orderBy('timestamp', 'desc')
         .limit(20)
         .get();
-      snapshot.forEach(doc => addCrashToHistory(doc.data().crashPoint));
+      snap.forEach(doc => addCrashHistory(doc.data().crashPoint));
+    }
+
+    // ==================== START EVERYTHING ====================
+    (async () => {
+      await loadUserData();
+      await loadHistoryFromDb();
+      document.getElementById('loadingScreen').style.display = 'none';
+      showScreen('game');
+      startNewRound();
     })();
   </script>
 </body>
