@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="telegram-web-app" content="yes">
   <title>Crash Game</title>
-  <!-- Firebase SDK (compat) -->
+  <!-- Firebase Realtime Database compat SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <style>
     :root {
       --bg: #070b14; --card: #101524; --card2: #1a1f33;
@@ -76,10 +76,10 @@
 </head>
 <body>
   <div class="app">
-    <!-- Loading screen (shown while Firebase connects) -->
+    <!-- Loading screen -->
     <div id="loadingScreen">
       <div class="spinner"></div>
-      <p id="loadingText" style="margin-top:16px; color:var(--text2)">Initializing Firebase...</p>
+      <p id="loadingText" style="margin-top:16px; color:var(--text2)">Initializing...</p>
     </div>
 
     <!-- Game Screen -->
@@ -149,69 +149,56 @@
 
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script>
-    // ============================ CONFIGURATION ============================
-    // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyA0xSWDVYH4qq_tZtwMoAVmaDYJTxDiWVc",
-    authDomain: "hobbyhubtest-d9e15.firebaseapp.com",
-    databaseURL: "https://hobbyhubtest-d9e15-default-rtdb.firebaseio.com",
-    projectId: "hobbyhubtest-d9e15",
-    storageBucket: "hobbyhubtest-d9e15.firebasestorage.app",
-    messagingSenderId: "973454715972",
-    appId: "1:973454715972:web:8aaab7bacccaf7e35c6011",
-    measurementId: "G-3Y3DQMX46W"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
+    // ==================== YOUR CONFIGURATION ====================
+    // 1. Firebase config (already pasted – do NOT change)
+    const firebaseConfig = {
+      apiKey: "AIzaSyA0xSWDVYH4qq_tZtwMoAVmaDYJTxDiWVc",
+      authDomain: "hobbyhubtest-d9e15.firebaseapp.com",
+      databaseURL: "https://hobbyhubtest-d9e15-default-rtdb.firebaseio.com",
+      projectId: "hobbyhubtest-d9e15",
+      storageBucket: "hobbyhubtest-d9e15.firebasestorage.app",
+      messagingSenderId: "973454715972",
+      appId: "1:973454715972:web:8aaab7bacccaf7e35c6011",
+      measurementId: "G-3Y3DQMX46W"
+    };
 
     // 2. Replace with your real bot token from @BotFather
     const BOT_TOKEN = '8775775732:AAHR69GveFccIj4hkPinVYcTiDLXysSlEB0';
 
-    // 3. Add your Telegram user IDs as admins
-    const ADMIN_IDS = ['8033727736', '987654321'];
+    // 3. Put your Telegram user IDs here to be admins
+    const ADMIN_IDS = ['8033727736'];
 
-    // ============================ INITIALIZATION ============================
+    // ==================== INITIALIZATION ====================
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    const rtdb = firebase.database();
 
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
 
-    // Extract user from Telegram initData (or fallback for browser testing)
+    // Extract Telegram user (or fallback for browser testing)
     let currentUser = null;
     try {
       const params = new URLSearchParams(tg.initData);
       currentUser = JSON.parse(params.get('user'));
     } catch(e) {}
     if (!currentUser) {
-      // Only used for testing outside Telegram – remove in production
+      // Fallback – remove in production
       currentUser = { id: 123456789, first_name: 'Demo', username: 'demo', photo_url: '' };
     }
     const userId = String(currentUser.id);
-    const userRef = db.collection('users').doc(userId);
+    const userRef = rtdb.ref('users/' + userId);
     const isAdmin = ADMIN_IDS.includes(userId);
 
-    // ============================ LOADING HANDLER ============================
+    // ==================== LOADING & ERROR HANDLING ====================
     const loadingScreen = document.getElementById('loadingScreen');
     const loadingText = document.getElementById('loadingText');
 
-    // Show an error if something fails
     function showError(message) {
-      loadingText.textContent = '';
       loadingScreen.innerHTML = `<div class="error-message">❌ ${message}</div>`;
     }
 
-    // ============================ UI HELPERS ============================
+    // ==================== BALANCE & PROFILE HELPERS ====================
     let userBalance = 0;
 
     function updateBalanceDisplay() {
@@ -219,31 +206,36 @@
       document.getElementById('profileBalance').textContent = userBalance;
     }
 
+    async function createUserIfNeeded() {
+      const snap = await userRef.once('value');
+      if (!snap.exists()) {
+        await userRef.set({
+          id: userId,
+          username: currentUser.username || '',
+          firstName: currentUser.first_name || '',
+          photoUrl: currentUser.photo_url || '',
+          balance: 0,
+          gamesPlayed: 0,
+          wins: 0,
+          losses: 0,
+          totalWagered: 0
+        });
+      }
+    }
+
     async function loadUserData() {
       try {
-        loadingText.textContent = 'Loading user data...';
-        const doc = await userRef.get();
-        if (!doc.exists) {
-          await userRef.set({
-            id: userId,
-            username: currentUser.username || '',
-            firstName: currentUser.first_name || '',
-            photoUrl: currentUser.photo_url || '',
-            balance: 0,
-            gamesPlayed: 0,
-            wins: 0,
-            losses: 0,
-            totalWagered: 0
-          });
-        }
-        const data = (await userRef.get()).data();
-        userBalance = data.balance;
+        loadingText.textContent = 'Connecting to Firebase...';
+        await createUserIfNeeded();
+        const snap = await userRef.once('value');
+        const data = snap.val() || {};
+        userBalance = data.balance || 0;
         updateBalanceDisplay();
         fillProfile(data);
         return true;
       } catch (err) {
         console.error(err);
-        showError('Firebase connection failed. Make sure Firestore is enabled (not just Realtime Database). Check the browser console for details.');
+        showError('Failed to load user data. Check the browser console (F12) for details.');
         return false;
       }
     }
@@ -259,12 +251,22 @@
     }
 
     async function refreshBalance() {
-      const snap = await userRef.get();
-      userBalance = snap.data().balance;
+      const snap = await userRef.child('balance').once('value');
+      userBalance = snap.val() || 0;
       updateBalanceDisplay();
     }
 
-    // ============================ SCREEN SWITCHING ============================
+    // ==================== TRANSACTION HELPERS (safe updates) ====================
+    // Realtime Database transactions return { committed, snapshot }
+    function incrementBalance(amount) {
+      return userRef.child('balance').transaction(current => (current || 0) + amount);
+    }
+
+    function incrementStat(field, amount) {
+      return userRef.child(field).transaction(current => (current || 0) + amount);
+    }
+
+    // ==================== SCREEN SWITCHING ====================
     const screens = ['game', 'profile', 'withdraw', 'admin'];
     function showScreen(id) {
       screens.forEach(s => document.getElementById(s + 'Screen').classList.remove('active'));
@@ -274,10 +276,11 @@
         if (b.dataset.screen === id) b.classList.add('active');
       });
       if (id === 'profile') {
-        userRef.get().then(snap => fillProfile(snap.data()));
+        userRef.once('value').then(snap => fillProfile(snap.val() || {}));
       }
       if (id === 'admin') loadPendingWithdrawals();
     }
+
     document.getElementById('bottomNav').addEventListener('click', (e) => {
       const btn = e.target.closest('.nav-btn');
       if (!btn) return;
@@ -286,7 +289,7 @@
 
     if (isAdmin) document.getElementById('adminNavBtn').style.display = 'block';
 
-    // ============================ CRASH GAME ENGINE ============================
+    // ==================== CRASH GAME ENGINE ====================
     const game = {
       phase: 'betting',
       multiplier: 1.0,
@@ -308,7 +311,7 @@
       if (Math.random() < 0.01) return 1.00;
       const r = Math.random();
       const raw = 0.99 / (1 - r);
-      const withEdge = raw * 0.95;
+      const withEdge = raw * 0.95; // 5% house edge
       return Math.max(1.00, Math.round(withEdge * 100) / 100);
     }
 
@@ -377,18 +380,19 @@
       phaseEl.textContent = `Crashed at ${game.crashPoint.toFixed(2)}x`;
       addCrashHistory(game.crashPoint);
 
-      // Save history to Firestore
-      db.collection('gameHistory').add({
+      // Save crash point to history
+      rtdb.ref('gameHistory').push({
         crashPoint: game.crashPoint,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        timestamp: firebase.database.ServerValue.TIMESTAMP
       });
 
       if (game.hasBet) {
-        await userRef.update({
-          gamesPlayed: firebase.firestore.FieldValue.increment(1),
-          losses: firebase.firestore.FieldValue.increment(1),
-          totalWagered: firebase.firestore.FieldValue.increment(game.betAmount)
-        });
+        // User lost – update stats
+        await Promise.all([
+          incrementStat('gamesPlayed', 1),
+          incrementStat('losses', 1),
+          incrementStat('totalWagered', game.betAmount)
+        ]);
         refreshBalance();
         alert(`Lost ${game.betAmount} Stars!`);
       }
@@ -404,7 +408,8 @@
 
       game.betAmount = amount;
       game.hasBet = true;
-      await userRef.update({ balance: firebase.firestore.FieldValue.increment(-amount) });
+      // Deduct balance immediately
+      await incrementBalance(-amount);
       await refreshBalance();
       placeBetBtn.disabled = true;
       betInput.disabled = true;
@@ -416,17 +421,18 @@
       game.hasBet = false;
       cashoutBtn.disabled = true;
 
-      await userRef.update({
-        balance: firebase.firestore.FieldValue.increment(payout),
-        gamesPlayed: firebase.firestore.FieldValue.increment(1),
-        wins: firebase.firestore.FieldValue.increment(1),
-        totalWagered: firebase.firestore.FieldValue.increment(game.betAmount)
-      });
+      // Update balance and stats
+      await Promise.all([
+        incrementBalance(payout),
+        incrementStat('gamesPlayed', 1),
+        incrementStat('wins', 1),
+        incrementStat('totalWagered', game.betAmount)
+      ]);
       refreshBalance();
       alert(`Cashed out at ${game.multiplier.toFixed(2)}x! Won ${payout} Stars`);
     });
 
-    // ============================ TOP-UP (Stars Invoice) ============================
+    // ==================== TOP-UP (Stars Invoice) ====================
     document.getElementById('topupBtn').addEventListener('click', () => {
       const amount = parseInt(prompt('Stars amount (min 1):', '50'));
       if (!amount || amount < 1) return;
@@ -448,7 +454,7 @@
         if (data.ok) {
           tg.openInvoice(data.result, async (status) => {
             if (status === 'paid') {
-              await userRef.update({ balance: firebase.firestore.FieldValue.increment(amount) });
+              await incrementBalance(amount);
               refreshBalance();
               alert('✅ Stars added!');
             }
@@ -460,7 +466,7 @@
       .catch(() => alert('Network error. Check your bot token.'));
     });
 
-    // ============================ WITHDRAWAL ============================
+    // ==================== WITHDRAWAL ====================
     document.getElementById('withdrawRequestBtn').addEventListener('click', async () => {
       const amount = parseInt(document.getElementById('withdrawAmount').value);
       const statusEl = document.getElementById('withdrawStatus');
@@ -469,46 +475,54 @@
 
       statusEl.textContent = 'Processing...';
       try {
-        await db.runTransaction(async (t) => {
-          const userDoc = await t.get(userRef);
-          const currentBal = userDoc.data().balance;
-          if (currentBal < amount) throw new Error('Insufficient balance');
-          t.update(userRef, { balance: currentBal - amount });
-          t.set(db.collection('withdrawals').doc(), {
-            userId,
-            username: currentUser.username || currentUser.first_name,
-            amount,
-            status: 'pending',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
+        // Use transaction to deduct balance and push withdrawal request atomically
+        await userRef.child('balance').transaction(async (current) => {
+          if (current === null || current < amount) {
+            // Return undefined to abort transaction
+            return;
+          }
+          return current - amount;
         });
+
+        // After successful deduction, push withdrawal request
+        await rtdb.ref('withdrawals').push({
+          userId,
+          username: currentUser.username || currentUser.first_name,
+          amount,
+          status: 'pending',
+          timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+
         statusEl.textContent = '✅ Request submitted. Admins will review.';
         refreshBalance();
         document.getElementById('withdrawAmount').value = '';
       } catch (e) {
-        statusEl.textContent = '❌ ' + e.message;
+        statusEl.textContent = '❌ ' + (e.message || 'Transaction failed');
       }
     });
 
-    // ============================ ADMIN PANEL ============================
+    // ==================== ADMIN PANEL ====================
     function loadPendingWithdrawals() {
       if (!isAdmin) return;
-      db.collection('withdrawals')
-        .where('status', '==', 'pending')
-        .orderBy('createdAt', 'desc')
-        .onSnapshot(snapshot => {
+      rtdb.ref('withdrawals')
+        .orderByChild('status')
+        .equalTo('pending')
+        .on('value', snapshot => {
           const container = document.getElementById('pendingWithdrawals');
           container.innerHTML = '';
-          if (snapshot.empty) { container.innerHTML = '<p style="color:var(--text2)">No pending withdrawals.</p>'; return; }
-          snapshot.forEach(doc => {
-            const w = doc.data();
+          if (!snapshot.exists()) {
+            container.innerHTML = '<p style="color:var(--text2)">No pending withdrawals.</p>';
+            return;
+          }
+          snapshot.forEach(child => {
+            const w = child.val();
             container.innerHTML += `
               <div class="wd-card">
                 <strong>${w.username}</strong> (ID: ${w.userId})<br>
                 Amount: <b>${w.amount} ⭐</b>
                 <div class="actions">
-                  <button class="btn-success" onclick="window.approveWd('${doc.id}')">Approve</button>
-                  <button class="btn-danger" onclick="window.rejectWd('${doc.id}', '${w.userId}', ${w.amount})">Reject</button>
+                  <button class="btn-success" onclick="window.approveWd('${child.key}')">Approve</button>
+                  <button class="btn-danger" onclick="window.rejectWd('${child.key}', '${w.userId}', ${w.amount})">Reject</button>
                 </div>
               </div>`;
           });
@@ -516,29 +530,27 @@
     }
 
     window.approveWd = async (wdId) => {
-      await db.collection('withdrawals').doc(wdId).update({ status: 'approved' });
+      await rtdb.ref('withdrawals/' + wdId).update({ status: 'approved' });
     };
 
     window.rejectWd = async (wdId, uid, amount) => {
-      await db.collection('withdrawals').doc(wdId).update({ status: 'rejected' });
-      await db.collection('users').doc(uid).update({ balance: firebase.firestore.FieldValue.increment(amount) });
+      // Refund balance
+      await rtdb.ref('users/' + uid + '/balance').transaction(cur => (cur || 0) + amount);
+      await rtdb.ref('withdrawals/' + wdId).update({ status: 'rejected' });
     };
 
-    // ============================ LOAD HISTORY ============================
+    // ==================== LOAD CRASH HISTORY ====================
     async function loadHistoryFromDb() {
-      try {
-        const snap = await db.collection('gameHistory')
-          .orderBy('timestamp', 'desc')
-          .limit(20)
-          .get();
-        snap.forEach(doc => addCrashHistory(doc.data().crashPoint));
-      } catch(e) { /* ignore */ }
+      const snap = await rtdb.ref('gameHistory').orderByChild('timestamp').limitToLast(20).once('value');
+      if (snap.exists()) {
+        const values = [];
+        snap.forEach(child => values.push(child.val().crashPoint));
+        values.reverse().forEach(cp => addCrashHistory(cp));
+      }
     }
 
-    // ============================ START EVERYTHING ============================
+    // ==================== START APP ====================
     (async () => {
-      // Wait a short time to see if Firebase initializes
-      loadingText.textContent = 'Connecting to Firebase...';
       const success = await loadUserData();
       if (!success) return;
 
