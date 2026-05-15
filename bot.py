@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Optional, Union
+from typing import Optional
 
 from telegram import (
     Update,
@@ -59,7 +59,7 @@ PREFIX_PRICES = {
 }
 
 MUTE_PRICES = {
-    "10min": 1,
+    "10min": 50,
     "1hour": 100,
     "5hours": 200,
     "10hours": 250,
@@ -89,40 +89,78 @@ DURATION_SECONDS = {
 # -------------------------------------------------------------------
 # Вспомогательные функции
 # -------------------------------------------------------------------
+def get_mute_permissions():
+    """Возвращает ChatPermissions с запретом всех сообщений (совместимо с любой версией библиотеки)."""
+    params = {
+        'can_send_messages': False,
+        'can_send_other_messages': False,
+        'can_add_web_page_previews': False,
+        'can_change_info': False,
+        'can_invite_users': False,
+        'can_pin_messages': False,
+    }
+    # Добавляем поля, если они есть в версии библиотеки
+    if hasattr(ChatPermissions, 'can_send_polls'):
+        params['can_send_polls'] = False
+    if hasattr(ChatPermissions, 'can_send_media_messages'):
+        params['can_send_media_messages'] = False
+    return ChatPermissions(**params)
+
+def get_unmute_permissions():
+    """Возвращает ChatPermissions для снятия мута."""
+    params = {
+        'can_send_messages': True,
+        'can_send_other_messages': True,
+        'can_add_web_page_previews': True,
+        'can_change_info': False,
+        'can_invite_users': True,
+        'can_pin_messages': False,
+    }
+    if hasattr(ChatPermissions, 'can_send_polls'):
+        params['can_send_polls'] = True
+    if hasattr(ChatPermissions, 'can_send_media_messages'):
+        params['can_send_media_messages'] = True
+    return ChatPermissions(**params)
+
 async def delayed_task(delay: float, coro):
     await asyncio.sleep(delay)
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
     """
-    Находит пользователя по @username или числовому ID.
-    Возвращает user_id, если он есть в группе, иначе None.
+    Ищет пользователя по @username или числовому ID.
+    Возвращает user_id, если участник есть в группе, иначе None.
     """
     text = text.strip()
-    # Убираем @ если есть
-    if text.startswith("@"):
-        username = text[1:]
-    else:
-        username = text
 
-    # Пробуем числовой ID
+    # 1) Числовой ID
+    if text.isdigit() or (text.startswith('-') and text[1:].isdigit()):
+        try:
+            user_id = int(text)
+            await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+            return user_id
+        except Exception:
+            pass
+
+    # 2) Username (с @ или без)
+    username = text.lstrip('@')
+    # Пробуем с @
     try:
-        user_id = int(text)
-        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
-        return user_id
-    except (ValueError, Exception):
+        user = await context.bot.get_chat(f"@{username}")
+        await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
+        return user.id
+    except Exception:
         pass
 
-    # Пробуем username
+    # Пробуем без @ (некоторые боты разрешают)
     try:
-        # get_chat с @username возвращает объект Chat пользователя
-        chat = await context.bot.get_chat(f"@{username}")
-        # Проверяем, есть ли он в группе
-        await context.bot.get_chat_member(GROUP_CHAT_ID, chat.id)
-        return chat.id
-    except Exception as e:
-        logging.error(f"Ошибка поиска пользователя: {e}")
-        return None
+        user = await context.bot.get_chat(username)
+        await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
+        return user.id
+    except Exception:
+        pass
+
+    return None
 
 async def set_prefix(context: ContextTypes.DEFAULT_TYPE, user_id: int, title: str, expires_in: Optional[int]):
     """Назначает пользователю префикс (зелёный custom title)."""
@@ -188,16 +226,7 @@ async def mute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int, muter_id
     await context.bot.restrict_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=target_id,
-        permissions=ChatPermissions(
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_polls=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False,
-            can_change_info=False,
-            can_invite_users=False,
-            can_pin_messages=False,
-        ),
+        permissions=get_mute_permissions(),
         until_date=until_date,
     )
 
@@ -229,16 +258,7 @@ async def unmute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int):
     await context.bot.restrict_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=target_id,
-        permissions=ChatPermissions(
-            can_send_messages=True,
-            can_send_media_messages=True,
-            can_send_polls=True,
-            can_send_other_messages=True,
-            can_add_web_page_previews=True,
-            can_change_info=False,
-            can_invite_users=True,
-            can_pin_messages=False,
-        ),
+        permissions=get_unmute_permissions(),
         until_date=0,
     )
     db = load_db()
