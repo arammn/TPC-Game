@@ -73,7 +73,7 @@ PREFIX_PRICES = {
 }
 
 MUTE_PRICES = {
-    "10min": 50,
+    "10min": 1,
     "1hour": 100,
     "5hours": 200,
     "10hours": 250,
