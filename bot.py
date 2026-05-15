@@ -59,7 +59,7 @@ PREFIX_PRICES = {
 }
 
 MUTE_PRICES = {
-    "10min": 1,
+    "10min": 50,
     "1hour": 100,
     "5hours": 200,
     "10hours": 250,
@@ -87,10 +87,10 @@ DURATION_SECONDS = {
 }
 
 # -------------------------------------------------------------------
-# Вспомогательные функции
+# Совместимые ChatPermissions
 # -------------------------------------------------------------------
 def get_mute_permissions():
-    """Возвращает ChatPermissions с запретом всех сообщений (совместимо с любой версией библиотеки)."""
+    """Возвращает ChatPermissions с запретом всех сообщений."""
     params = {
         'can_send_messages': False,
         'can_send_other_messages': False,
@@ -99,7 +99,6 @@ def get_mute_permissions():
         'can_invite_users': False,
         'can_pin_messages': False,
     }
-    # Добавляем поля, если они есть в версии библиотеки
     if hasattr(ChatPermissions, 'can_send_polls'):
         params['can_send_polls'] = False
     if hasattr(ChatPermissions, 'can_send_media_messages'):
@@ -122,44 +121,47 @@ def get_unmute_permissions():
         params['can_send_media_messages'] = True
     return ChatPermissions(**params)
 
+# -------------------------------------------------------------------
+# Вспомогательные функции
+# -------------------------------------------------------------------
 async def delayed_task(delay: float, coro):
     await asyncio.sleep(delay)
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
     """
-    Ищет пользователя по @username или числовому ID.
+    Находит пользователя по @username или числовому ID.
     Возвращает user_id, если участник есть в группе, иначе None.
     """
     text = text.strip()
 
     # 1) Числовой ID
-    if text.isdigit() or (text.startswith('-') and text[1:].isdigit()):
-        try:
-            user_id = int(text)
-            await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
-            return user_id
-        except Exception:
-            pass
+    try:
+        user_id = int(text)
+        # Проверяем, есть ли он в группе
+        await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+        return user_id
+    except ValueError:
+        pass  # не число, продолжаем
+    except Exception:
+        # Если ошибка (не в группе), возвращаем None
+        return None
 
-    # 2) Username (с @ или без)
+    # 2) Username
+    # Удаляем @ если есть
     username = text.lstrip('@')
     # Пробуем с @
-    try:
-        user = await context.bot.get_chat(f"@{username}")
-        await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
-        return user.id
-    except Exception:
-        pass
+    for try_name in (f"@{username}", username):
+        try:
+            user = await context.bot.get_chat(try_name)
+            if user.type == 'private':
+                # Проверяем членство в группе
+                await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
+                return user.id
+        except Exception:
+            continue
 
-    # Пробуем без @ (некоторые боты разрешают)
-    try:
-        user = await context.bot.get_chat(username)
-        await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
-        return user.id
-    except Exception:
-        pass
-
+    # Пользователь не найден
     return None
 
 async def set_prefix(context: ContextTypes.DEFAULT_TYPE, user_id: int, title: str, expires_in: Optional[int]):
@@ -490,7 +492,11 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         dur = user_data.pop("pending_mute")
         target_id = await resolve_user(msg_text, context)
         if not target_id:
-            await update.message.reply_text("❌ Пользователь не найден в группе. Попробуйте ещё раз.")
+            await update.message.reply_text(
+                "❌ Пользователь не найден в группе.\n"
+                "Убедитесь, что вы ввели правильный @username или ID, "
+                "и что этот пользователь есть в группе.",
+            )
             return
 
         db = load_db()
@@ -513,7 +519,11 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         del user_data["pending_unmute"]
         target_id = await resolve_user(msg_text, context)
         if not target_id:
-            await update.message.reply_text("❌ Пользователь не найден в группе. Попробуйте ещё раз.")
+            await update.message.reply_text(
+                "❌ Пользователь не найден в группе.\n"
+                "Убедитесь, что вы ввели правильный @username или ID, "
+                "и что этот пользователь есть в группе.",
+            )
             return
 
         db = load_db()
