@@ -23,7 +23,7 @@ from telegram.ext import (
 )
 
 # -------------------------------------------------------------------
-# Configuration & DB
+# Настройки и база данных
 # -------------------------------------------------------------------
 CONFIG_FILE = "config.json"
 DB_FILE = "db.json"
@@ -47,7 +47,7 @@ def save_db(data):
         json.dump(data, f, indent=2)
 
 # -------------------------------------------------------------------
-# Prices and labels
+# Цены и подписи
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
     "10min": 50,
@@ -70,12 +70,12 @@ MUTE_PRICES = {
 UNMUTE_PRICE = 70
 
 DURATION_LABELS = {
-    "10min": "10 minutes",
-    "1hour": "1 hour",
-    "5hours": "5 hours",
-    "10hours": "10 hours",
-    "24hours": "24 hours",
-    "forever": "Forever",
+    "10min": "10 минут",
+    "1hour": "1 час",
+    "5hours": "5 часов",
+    "10hours": "10 часов",
+    "24hours": "24 часа",
+    "forever": "Навсегда",
 }
 
 DURATION_SECONDS = {
@@ -87,49 +87,45 @@ DURATION_SECONDS = {
 }
 
 # -------------------------------------------------------------------
-# Helper functions
+# Вспомогательные функции
 # -------------------------------------------------------------------
 async def delayed_task(delay: float, coro):
-    """Run a coroutine after `delay` seconds."""
     await asyncio.sleep(delay)
     await coro()
 
-async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Union[int, None]:
+async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
     """
-    Resolve a user by @username or numeric ID.
-    Returns user_id if found in the group, else None.
+    Находит пользователя по @username или числовому ID.
+    Возвращает user_id, если он есть в группе, иначе None.
     """
     text = text.strip()
-    # Remove leading @ if present
+    # Убираем @ если есть
     if text.startswith("@"):
         username = text[1:]
     else:
         username = text
 
-    # Case 1: numeric ID
+    # Пробуем числовой ID
     try:
         user_id = int(text)
-        await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
         return user_id
-    except ValueError:
-        pass
-    except Exception:
-        # user not in group or other error, fallback to username resolution
+    except (ValueError, Exception):
         pass
 
-    # Case 2: username
+    # Пробуем username
     try:
-        # get_chat with @username returns the user's Chat object
-        user = await context.bot.get_chat(f"@{username}")
-        # Verify membership in the group
-        await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
-        return user.id
+        # get_chat с @username возвращает объект Chat пользователя
+        chat = await context.bot.get_chat(f"@{username}")
+        # Проверяем, есть ли он в группе
+        await context.bot.get_chat_member(GROUP_CHAT_ID, chat.id)
+        return chat.id
     except Exception as e:
-        logging.error(f"Resolve user failed: {e}")
+        logging.error(f"Ошибка поиска пользователя: {e}")
         return None
 
 async def set_prefix(context: ContextTypes.DEFAULT_TYPE, user_id: int, title: str, expires_in: Optional[int]):
-    """Promote user with a custom title; schedule demotion if temporary."""
+    """Назначает пользователю префикс (зелёный custom title)."""
     await context.bot.promote_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=user_id,
@@ -167,7 +163,6 @@ async def set_prefix(context: ContextTypes.DEFAULT_TYPE, user_id: int, title: st
                     can_manage_video_chats=False,
                     can_manage_topics=False,
                 )
-                # Clean DB
                 db = load_db()
                 db["prefixes"] = [
                     p for p in db["prefixes"]
@@ -175,12 +170,12 @@ async def set_prefix(context: ContextTypes.DEFAULT_TYPE, user_id: int, title: st
                 ]
                 save_db(db)
             except Exception as e:
-                logging.error(f"Demotion error: {e}")
+                logging.error(f"Ошибка снятия префикса: {e}")
 
         asyncio.create_task(delayed_task(expires_in, demote))
 
 async def mute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int, muter_id: int, duration_key: str):
-    """Apply mute restriction and store record."""
+    """Мутит пользователя и сохраняет запись в БД."""
     now = datetime.utcnow()
     if duration_key == "forever":
         until_date = None
@@ -207,7 +202,7 @@ async def mute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int, muter_id
     )
 
     db = load_db()
-    # Remove any existing mute for this user (avoid duplicates)
+    # Удаляем предыдущие муты этого же пользователя
     db["mutes"] = [m for m in db["mutes"] if m["target_id"] != target_id]
     db["mutes"].append({
         "target_id": target_id,
@@ -218,7 +213,6 @@ async def mute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int, muter_id
     })
     save_db(db)
 
-    # Schedule removal of the DB record when mute expires (temporary only)
     if duration_key != "forever":
         async def cleanup():
             db = load_db()
@@ -228,10 +222,10 @@ async def mute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int, muter_id
             ]
             save_db(db)
 
-        asyncio.create_task(delayed_task(seconds, cleanup))
+        asyncio.create_task(delayed_task(DURATION_SECONDS[duration_key], cleanup))
 
 async def unmute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int):
-    """Lift all restrictions."""
+    """Снимает мут."""
     await context.bot.restrict_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=target_id,
@@ -245,53 +239,53 @@ async def unmute_user(context: ContextTypes.DEFAULT_TYPE, target_id: int):
             can_invite_users=True,
             can_pin_messages=False,
         ),
-        until_date=0,  # lift all
+        until_date=0,
     )
     db = load_db()
     db["mutes"] = [m for m in db["mutes"] if m["target_id"] != target_id]
     save_db(db)
 
 async def notify_admins(context: ContextTypes.DEFAULT_TYPE, text: str):
-    """Send a message to all group admins (in private chat)."""
+    """Отправляет уведомление всем админам группы."""
     try:
         admins = await context.bot.get_chat_administrators(GROUP_CHAT_ID)
         for admin in admins:
             try:
                 await context.bot.send_message(chat_id=admin.user.id, text=text)
-            except Exception:
+            except:
                 pass
     except Exception as e:
-        logging.error(f"Failed to notify admins: {e}")
+        logging.error(f"Ошибка уведомления админов: {e}")
 
 # -------------------------------------------------------------------
-# Menu handlers
+# Меню бота
 # -------------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show main control panel (private chat only)."""
+    """Главное меню (только в личном чате)."""
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Please use /start in a private chat with me.")
+        await update.message.reply_text("Пожалуйста, используйте /start в личном чате со мной.")
         return
 
     keyboard = [
-        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
-        [InlineKeyboardButton("🛒 Shop", callback_data="shop")],
+        [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
+        [InlineKeyboardButton("🛒 Магазин", callback_data="shop")],
     ]
     await update.message.reply_text(
-        "🎛️ *Control Panel*\nChoose a section:",
+        "🎛️ *Панель управления*\nВыберите раздел:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown",
     )
 
 async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Callback to go back to main menu."""
+    """Коллбэк возврата в главное меню."""
     query = update.callback_query
     await query.answer()
     keyboard = [
-        [InlineKeyboardButton("👤 Profile", callback_data="profile")],
-        [InlineKeyboardButton("🛒 Shop", callback_data="shop")],
+        [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
+        [InlineKeyboardButton("🛒 Магазин", callback_data="shop")],
     ]
     await query.edit_message_text(
-        "🎛️ *Control Panel*\nChoose a section:",
+        "🎛️ *Панель управления*\nВыберите раздел:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown",
     )
@@ -305,22 +299,22 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prefix = next((p for p in db["prefixes"] if p["user_id"] == user_id), None)
     mutes = [m for m in db["mutes"] if m["muter_id"] == user_id]
 
-    text = "👤 *Your Profile*\n\n"
+    text = "👤 *Ваш профиль*\n\n"
     if prefix:
         if prefix.get("expires_at"):
             expire_time = datetime.fromtimestamp(prefix["expires_at"])
             remaining = expire_time - datetime.now()
             if remaining.total_seconds() > 0:
-                text += f"🏷️ Prefix: {prefix['title']} (expires in {str(remaining).split('.')[0]})\n"
+                text += f"🏷️ Префикс: {prefix['title']} (истекает через {str(remaining).split('.')[0]})\n"
             else:
-                text += "🏷️ Prefix: expired\n"
+                text += "🏷️ Префикс: истёк\n"
         else:
-            text += f"🏷️ Prefix: {prefix['title']} (forever)\n"
+            text += f"🏷️ Префикс: {prefix['title']} (навсегда)\n"
     else:
-        text += "🏷️ No active prefix\n"
+        text += "🏷️ Нет активного префикса\n"
 
     if mutes:
-        text += "\n🔇 *Your purchased mutes:*\n"
+        text += "\n🔇 *Купленные муты:*\n"
         for m in mutes:
             try:
                 target = await context.bot.get_chat(m["target_id"])
@@ -331,60 +325,60 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 exp = datetime.fromtimestamp(m["until_date"])
                 remaining = exp - datetime.now()
                 if remaining.total_seconds() > 0:
-                    text += f"  → {name}: {DURATION_LABELS[m['duration']]} (until {exp.strftime('%H:%M')})\n"
+                    text += f"  → {name}: {DURATION_LABELS[m['duration']]} (до {exp.strftime('%H:%M')})\n"
                 else:
-                    text += f"  → {name}: expired\n"
+                    text += f"  → {name}: истёк\n"
             else:
-                text += f"  → {name}: Forever\n"
+                text += f"  → {name}: Навсегда\n"
     else:
-        text += "\n🔇 No mutes purchased"
+        text += "\n🔇 Нет купленных мутов"
 
-    keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="main_menu")]]
+    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def show_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     keyboard = [
-        [InlineKeyboardButton("🏷️ Prefix", callback_data="shop_prefix")],
-        [InlineKeyboardButton("🔇 Mute", callback_data="shop_mute")],
-        [InlineKeyboardButton("🔊 Unmute", callback_data="shop_unmute")],
-        [InlineKeyboardButton("🔙 Back", callback_data="main_menu")],
+        [InlineKeyboardButton("🏷️ Префикс", callback_data="shop_prefix")],
+        [InlineKeyboardButton("🔇 Мут", callback_data="shop_mute")],
+        [InlineKeyboardButton("🔊 Размут", callback_data="shop_unmute")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="main_menu")],
     ]
     await query.edit_message_text(
-        "🛒 *Shop*\nChoose a product:",
+        "🛒 *Магазин*\nВыберите товар:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown",
     )
 
 # -------------------------------------------------------------------
-# Product cards & duration selection
+# Карточки товаров и выбор длительности
 # -------------------------------------------------------------------
 async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     text = (
-        "🏷️ *Prefix*\n"
+        "🏷️ *Префикс*\n"
         "────────────────\n"
-        "Get a green custom title in the group.\n"
+        "Получите зелёный custom title в группе.\n"
         "────────────────\n"
-        "Prices:\n"
-        "10 min — 50 ⭐\n"
-        "1 hour — 80 ⭐\n"
-        "5 hours — 150 ⭐\n"
-        "10 hours — 250 ⭐\n"
-        "24 hours — 350 ⭐\n"
-        "Forever — 400 ⭐\n"
-        "Select duration:"
+        "Цены:\n"
+        "10 мин — 50 ⭐\n"
+        "1 час — 80 ⭐\n"
+        "5 часов — 150 ⭐\n"
+        "10 часов — 250 ⭐\n"
+        "24 часа — 350 ⭐\n"
+        "Навсегда — 400 ⭐\n"
+        "Выберите длительность:"
     )
     keyboard = [
-        [InlineKeyboardButton("10 min · 50⭐", callback_data="prefix_dur_10min")],
-        [InlineKeyboardButton("1 hour · 80⭐", callback_data="prefix_dur_1hour")],
-        [InlineKeyboardButton("5 hours · 150⭐", callback_data="prefix_dur_5hours")],
-        [InlineKeyboardButton("10 hours · 250⭐", callback_data="prefix_dur_10hours")],
-        [InlineKeyboardButton("24 hours · 350⭐", callback_data="prefix_dur_24hours")],
-        [InlineKeyboardButton("Forever · 400⭐", callback_data="prefix_dur_forever")],
-        [InlineKeyboardButton("🔙 Back to shop", callback_data="shop")],
+        [InlineKeyboardButton("10 мин · 50⭐", callback_data="prefix_dur_10min")],
+        [InlineKeyboardButton("1 час · 80⭐", callback_data="prefix_dur_1hour")],
+        [InlineKeyboardButton("5 часов · 150⭐", callback_data="prefix_dur_5hours")],
+        [InlineKeyboardButton("10 часов · 250⭐", callback_data="prefix_dur_10hours")],
+        [InlineKeyboardButton("24 часа · 350⭐", callback_data="prefix_dur_24hours")],
+        [InlineKeyboardButton("Навсегда · 400⭐", callback_data="prefix_dur_forever")],
+        [InlineKeyboardButton("🔙 Назад в магазин", callback_data="shop")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -392,15 +386,15 @@ async def handle_prefix_duration(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     dur = query.data.split("_")[2]
-    await query.edit_message_text("💳 Sending invoice...")
+    await query.edit_message_text("💳 Отправляю счёт...")
     await context.bot.send_invoice(
         chat_id=query.from_user.id,
-        title="Prefix purchase",
-        description=f"Green prefix for {DURATION_LABELS[dur]}",
+        title="Покупка префикса",
+        description=f"Зелёный префикс на {DURATION_LABELS[dur]}",
         payload=f"prefix_{dur}",
         provider_token="",
         currency="XTR",
-        prices=[LabeledPrice("Prefix", PREFIX_PRICES[dur])],
+        prices=[LabeledPrice("Префикс", PREFIX_PRICES[dur])],
         start_parameter="prefix",
     )
 
@@ -408,27 +402,27 @@ async def show_mute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     text = (
-        "🔇 *Mute*\n"
+        "🔇 *Мут*\n"
         "────────────────\n"
-        "Mute any user in the group.\n"
+        "Замутить любого участника группы.\n"
         "────────────────\n"
-        "Prices:\n"
-        "10 min — 50 ⭐\n"
-        "1 hour — 100 ⭐\n"
-        "5 hours — 200 ⭐\n"
-        "10 hours — 250 ⭐\n"
-        "24 hours — 300 ⭐\n"
-        "Forever — 1000 ⭐\n"
-        "Choose duration first:"
+        "Цены:\n"
+        "10 мин — 50 ⭐\n"
+        "1 час — 100 ⭐\n"
+        "5 часов — 200 ⭐\n"
+        "10 часов — 250 ⭐\n"
+        "24 часа — 300 ⭐\n"
+        "Навсегда — 1000 ⭐\n"
+        "Сначала выберите длительность:"
     )
     keyboard = [
-        [InlineKeyboardButton("10 min · 50⭐", callback_data="mute_dur_10min")],
-        [InlineKeyboardButton("1 hour · 100⭐", callback_data="mute_dur_1hour")],
-        [InlineKeyboardButton("5 hours · 200⭐", callback_data="mute_dur_5hours")],
-        [InlineKeyboardButton("10 hours · 250⭐", callback_data="mute_dur_10hours")],
-        [InlineKeyboardButton("24 hours · 300⭐", callback_data="mute_dur_24hours")],
-        [InlineKeyboardButton("Forever · 1000⭐", callback_data="mute_dur_forever")],
-        [InlineKeyboardButton("🔙 Back to shop", callback_data="shop")],
+        [InlineKeyboardButton("10 мин · 50⭐", callback_data="mute_dur_10min")],
+        [InlineKeyboardButton("1 час · 100⭐", callback_data="mute_dur_1hour")],
+        [InlineKeyboardButton("5 часов · 200⭐", callback_data="mute_dur_5hours")],
+        [InlineKeyboardButton("10 часов · 250⭐", callback_data="mute_dur_10hours")],
+        [InlineKeyboardButton("24 часа · 300⭐", callback_data="mute_dur_24hours")],
+        [InlineKeyboardButton("Навсегда · 1000⭐", callback_data="mute_dur_forever")],
+        [InlineKeyboardButton("🔙 Назад в магазин", callback_data="shop")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -438,35 +432,34 @@ async def handle_mute_duration(update: Update, context: ContextTypes.DEFAULT_TYP
     dur = query.data.split("_")[2]
     context.user_data["pending_mute"] = dur
     await query.edit_message_text(
-        "Send the @username or numeric ID of the user you want to mute.\n"
-        "Example: `@username` or `123456789`",
+        "Отправьте @username или числовой ID пользователя, которого хотите замутить.\n"
+        "Пример: `@username` или `123456789`",
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="shop")]]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
 async def show_unmute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     text = (
-        "🔊 *Unmute*\n"
+        "🔊 *Размут*\n"
         "────────────────\n"
-        "Remove mute from a user.\n"
-        "Price: 70 ⭐\n"
+        "Снять мут с пользователя.\n"
+        "Цена: 70 ⭐\n"
         "────────────────\n"
-        "Send the @username or ID of the person you want to unmute:"
+        "Отправьте @username или ID человека, которого нужно размутить:"
     )
     context.user_data["pending_unmute"] = True
     await query.edit_message_text(
         text,
         parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="shop")]]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
 # -------------------------------------------------------------------
-# Target input handler
+# Обработчик ввода цели
 # -------------------------------------------------------------------
 async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process user input for mute/unmute targets."""
     if update.effective_chat.type != "private":
         return
 
@@ -477,22 +470,22 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         dur = user_data.pop("pending_mute")
         target_id = await resolve_user(msg_text, context)
         if not target_id:
-            await update.message.reply_text("❌ User not found in the group. Please try again.")
+            await update.message.reply_text("❌ Пользователь не найден в группе. Попробуйте ещё раз.")
             return
 
         db = load_db()
         if any(m["target_id"] == target_id for m in db["mutes"]):
-            await update.message.reply_text("🔇 This user is already muted.")
+            await update.message.reply_text("🔇 Этот пользователь уже замучен.")
             return
 
         amount = MUTE_PRICES[dur]
         await update.message.reply_invoice(
-            title="Mute purchase",
-            description=f"Mute user for {DURATION_LABELS[dur]}",
+            title="Покупка мута",
+            description=f"Мут пользователя на {DURATION_LABELS[dur]}",
             payload=f"mute_{dur}_{target_id}",
             provider_token="",
             currency="XTR",
-            prices=[LabeledPrice("Mute", amount)],
+            prices=[LabeledPrice("Мут", amount)],
             start_parameter="mute",
         )
 
@@ -500,26 +493,26 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         del user_data["pending_unmute"]
         target_id = await resolve_user(msg_text, context)
         if not target_id:
-            await update.message.reply_text("❌ User not found in the group. Please try again.")
+            await update.message.reply_text("❌ Пользователь не найден в группе. Попробуйте ещё раз.")
             return
 
         db = load_db()
         if not any(m["target_id"] == target_id for m in db["mutes"]):
-            await update.message.reply_text("🔊 This user is not muted by the bot.")
+            await update.message.reply_text("🔊 Этот пользователь не замучен ботом.")
             return
 
         await update.message.reply_invoice(
-            title="Unmute purchase",
-            description="Remove mute from user",
+            title="Размут",
+            description="Снять мут с пользователя",
             payload=f"unmute_{target_id}",
             provider_token="",
             currency="XTR",
-            prices=[LabeledPrice("Unmute", UNMUTE_PRICE)],
+            prices=[LabeledPrice("Размут", UNMUTE_PRICE)],
             start_parameter="unmute",
         )
 
 # -------------------------------------------------------------------
-# Payment handlers
+# Платёжные обработчики
 # -------------------------------------------------------------------
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
@@ -533,7 +526,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     buyer_username = buyer.username
     buyer_mention = f"@{buyer_username}" if buyer_username else buyer_name
 
-    await update.message.reply_text("✅ Payment successful! Processing...")
+    await update.message.reply_text("✅ Платёж успешен! Обрабатываю...")
 
     if payload.startswith("prefix_"):
         dur = payload.split("_")[1]
@@ -556,13 +549,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await notify_admins(
             context,
-            f"🟢 {buyer_name} ({buyer_mention}) bought a prefix for {DURATION_LABELS[dur]}."
+            f"🟢 {buyer_name} ({buyer_mention}) купил префикс на {DURATION_LABELS[dur]}."
         )
         await context.bot.send_message(
             GROUP_CHAT_ID,
-            f"🎉 {buyer_mention} bought a green prefix for {DURATION_LABELS[dur]}.",
+            f"🎉 {buyer_mention} приобрёл зелёный префикс на {DURATION_LABELS[dur]}.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Do the same", url=f"https://t.me/{context.bot.username}?start=start")
+                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
             ]]),
         )
 
@@ -579,13 +572,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await notify_admins(
             context,
-            f"🔇 {buyer_name} ({buyer_mention}) muted {target_name} for {DURATION_LABELS[dur]}."
+            f"🔇 {buyer_name} ({buyer_mention}) замутил {target_name} на {DURATION_LABELS[dur]}."
         )
         await context.bot.send_message(
             GROUP_CHAT_ID,
-            f"🔇 {buyer_mention} muted {target_name} for {DURATION_LABELS[dur]}.",
+            f"🔇 {buyer_mention} замутил {target_name} на {DURATION_LABELS[dur]}.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Do the same", url=f"https://t.me/{context.bot.username}?start=start")
+                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
             ]]),
         )
 
@@ -601,18 +594,18 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await notify_admins(
             context,
-            f"🔊 {buyer_name} ({buyer_mention}) unmuted {target_name}."
+            f"🔊 {buyer_name} ({buyer_mention}) размутил {target_name}."
         )
         await context.bot.send_message(
             GROUP_CHAT_ID,
-            f"🔊 {buyer_mention} unmuted {target_name}.",
+            f"🔊 {buyer_mention} размутил {target_name}.",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Do the same", url=f"https://t.me/{context.bot.username}?start=start")
+                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
             ]]),
         )
 
 # -------------------------------------------------------------------
-# Callback router
+# Роутер коллбэков
 # -------------------------------------------------------------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -636,10 +629,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_unmute_card(update, context)
 
 # -------------------------------------------------------------------
-# Restore scheduled tasks on startup
+# Восстановление отложенных задач при запуске
 # -------------------------------------------------------------------
 async def restore_scheduled_jobs(app: Application):
-    """Re‑schedule all prefix demotions and mute cleanups."""
     db = load_db()
     now = datetime.utcnow().timestamp()
 
@@ -670,7 +662,7 @@ async def restore_scheduled_jobs(app: Application):
                         ]
                         save_db(db2)
                     except Exception as e:
-                        logging.error(f"Restored demotion error: {e}")
+                        logging.error(f"Ошибка восстановленного снятия: {e}")
                 asyncio.create_task(delayed_task(delay, demote_restored))
 
     for mute in db["mutes"]:
@@ -687,7 +679,7 @@ async def restore_scheduled_jobs(app: Application):
                 asyncio.create_task(delayed_task(delay, cleanup_restored))
 
 # -------------------------------------------------------------------
-# Main
+# Запуск
 # -------------------------------------------------------------------
 def main():
     logging.basicConfig(
@@ -697,14 +689,12 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Register handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_input))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
-    # Restore scheduled jobs after bot is ready
     async def post_init(application):
         await restore_scheduled_jobs(application)
 
