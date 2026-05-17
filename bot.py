@@ -1,9 +1,7 @@
 import asyncio
-import json
 import logging
-import os
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional
 
 from telegram import (
     Update,
@@ -22,67 +20,11 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# -------------------------------------------------------------------
-# Конфигурация и база данных
-# -------------------------------------------------------------------
-CONFIG_FILE = "config.json"
-DB_FILE = "db.json"
-
-with open(CONFIG_FILE) as f:
-    config = json.load(f)
-
-BOT_TOKEN = config["BOT_TOKEN"]
-GROUP_CHAT_ID = config["GROUP_CHAT_ID"]
-ADMIN_IDS: List[int] = config.get("ADMIN_IDS", [])
-
-DEFAULT_DB = {"prefixes": [], "mutes": [], "history": []}
-if not os.path.exists(DB_FILE):
-    with open(DB_FILE, "w") as f:
-        json.dump(DEFAULT_DB, f)
-else:
-    with open(DB_FILE) as f:
-        db = json.load(f)
-    updated = False
-    for key, val in DEFAULT_DB.items():
-        if key not in db:
-            db[key] = val
-            updated = True
-    if updated:
-        with open(DB_FILE, "w") as f:
-            json.dump(db, f, indent=2)
-
-def load_db():
-    with open(DB_FILE) as f:
-        return json.load(f)
-
-def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+import config
+from db import load_db, save_db
 
 # -------------------------------------------------------------------
-# Цены и длительности
-# -------------------------------------------------------------------
-PREFIX_PRICES = {
-    "10min": 1, "1hour": 80, "5hours": 150,
-    "10hours": 250, "24hours": 350, "forever": 400,
-}
-MUTE_PRICES = {
-    "10min": 1, "1hour": 100, "5hours": 200,
-    "10hours": 250, "24hours": 300, "forever": 1000,
-}
-UNMUTE_PRICE = 1
-
-DURATION_LABELS = {
-    "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
-    "10hours": "10 часов", "24hours": "24 часа", "forever": "Навсегда",
-}
-DURATION_SECONDS = {
-    "10min": 600, "1hour": 3600, "5hours": 18000,
-    "10hours": 36000, "24hours": 86400,
-}
-
-# -------------------------------------------------------------------
-# Наборы прав (как в примерах)
+# Наборы прав
 # -------------------------------------------------------------------
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
@@ -114,53 +56,26 @@ UNMUTE_PERMISSIONS = ChatPermissions(
 )
 
 # -------------------------------------------------------------------
-# Поиск пользователя (исправлен под ваш пример)
+# Цены и длительности
 # -------------------------------------------------------------------
-async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
-    """
-    Находит пользователя по @username или числовому ID.
-    Использует get_chat (как в /id) и проверку членства.
-    """
-    text = text.strip()
+PREFIX_PRICES = {
+    "10min": 50, "1hour": 80, "5hours": 150,
+    "10hours": 250, "24hours": 350, "forever": 400,
+}
+MUTE_PRICES = {
+    "10min": 50, "1hour": 100, "5hours": 200,
+    "10hours": 250, "24hours": 300, "forever": 1000,
+}
+UNMUTE_PRICE = 70
 
-    # 1. Числовой ID
-    if text.isdigit():
-        user_id = int(text)
-        try:
-            await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
-            return user_id
-        except Exception:
-            pass
-
-    # 2. Username (с @ или без)
-    username = text.lstrip('@')
-    if not username:
-        return None
-
-    # Пробуем разные варианты, аналогично вашему /id
-    for name_variant in (f"@{username}", username):
-        try:
-            chat = await context.bot.get_chat(name_variant)
-            # Проверяем, что это пользователь, и он в группе
-            if chat.type == "private":
-                await context.bot.get_chat_member(GROUP_CHAT_ID, chat.id)
-                return chat.id
-        except Exception:
-            continue
-
-    return None
-
-# -------------------------------------------------------------------
-# Проверка на администратора
-# -------------------------------------------------------------------
-async def is_user_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    if user_id in ADMIN_IDS:
-        return True
-    try:
-        member = await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
-        return member.status in ("creator", "administrator")
-    except:
-        return False
+DURATION_LABELS = {
+    "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
+    "10hours": "10 часов", "24hours": "24 часа", "forever": "Навсегда",
+}
+DURATION_SECONDS = {
+    "10min": 600, "1hour": 3600, "5hours": 18000,
+    "10hours": 36000, "24hours": 86400,
+}
 
 # -------------------------------------------------------------------
 # Утилиты
@@ -168,6 +83,43 @@ async def is_user_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> boo
 async def delayed_task(delay: float, coro):
     await asyncio.sleep(delay)
     await coro()
+
+async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
+    """Поиск пользователя: числовой ID или @username (через get_chat)."""
+    text = text.strip()
+    # 1. Числовой ID
+    if text.isdigit():
+        user_id = int(text)
+        try:
+            await context.bot.get_chat_member(config.GROUP_CHAT_ID, user_id)
+            return user_id
+        except:
+            pass
+
+    # 2. Username
+    username = text.lstrip('@')
+    if not username:
+        return None
+
+    for variant in (f"@{username}", username):
+        try:
+            chat = await context.bot.get_chat(variant)
+            if chat.type == "private":
+                # Проверяем членство в группе
+                await context.bot.get_chat_member(config.GROUP_CHAT_ID, chat.id)
+                return chat.id
+        except:
+            continue
+    return None
+
+async def is_user_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    if user_id in config.ADMIN_IDS:
+        return True
+    try:
+        member = await context.bot.get_chat_member(config.GROUP_CHAT_ID, user_id)
+        return member.status in ("creator", "administrator")
+    except:
+        return False
 
 async def add_to_history(context, buyer_id, product, details):
     db = load_db()
@@ -181,9 +133,9 @@ async def add_to_history(context, buyer_id, product, details):
 
 async def notify_admins(context, text):
     try:
-        admins = await context.bot.get_chat_administrators(GROUP_CHAT_ID)
+        admins = await context.bot.get_chat_administrators(config.GROUP_CHAT_ID)
         ids = set(a.user.id for a in admins)
-        for uid in ADMIN_IDS:
+        for uid in config.ADMIN_IDS:
             ids.add(uid)
         for uid in ids:
             try:
@@ -194,12 +146,11 @@ async def notify_admins(context, text):
         logging.error(f"Notify admins: {e}")
 
 # -------------------------------------------------------------------
-# Работа с префиксом (точь-в-точь по вашему примеру)
+# Префикс (как в вашем примере)
 # -------------------------------------------------------------------
-async def give_prefix(context, user_id, title):
-    """Выдаёт префикс: временный админ без прав + custom title."""
+async def give_prefix(context, user_id: int, title: str):
     await context.bot.promote_chat_member(
-        chat_id=GROUP_CHAT_ID,
+        chat_id=config.GROUP_CHAT_ID,
         user_id=user_id,
         can_change_info=False,
         can_delete_messages=False,
@@ -214,15 +165,14 @@ async def give_prefix(context, user_id, title):
         can_delete_stories=False,
     )
     await context.bot.set_chat_administrator_custom_title(
-        chat_id=GROUP_CHAT_ID,
+        chat_id=config.GROUP_CHAT_ID,
         user_id=user_id,
         custom_title=title,
     )
 
-async def remove_prefix(context, user_id):
-    """Снимает префикс: демоут + бан/разбан."""
+async def remove_prefix(context, user_id: int):
     await context.bot.promote_chat_member(
-        chat_id=GROUP_CHAT_ID,
+        chat_id=config.GROUP_CHAT_ID,
         user_id=user_id,
         can_change_info=False,
         can_delete_messages=False,
@@ -235,12 +185,12 @@ async def remove_prefix(context, user_id):
         is_anonymous=False,
     )
     await context.bot.ban_chat_member(
-        chat_id=GROUP_CHAT_ID,
+        chat_id=config.GROUP_CHAT_ID,
         user_id=user_id,
         until_date=0,
     )
     await context.bot.unban_chat_member(
-        chat_id=GROUP_CHAT_ID,
+        chat_id=config.GROUP_CHAT_ID,
         user_id=user_id,
         only_if_banned=True,
     )
@@ -255,15 +205,30 @@ async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text("Использование: /prefix @username Название")
         return
-    target_text = context.args[0]
+
+    username = context.args[0].replace("@", "")
     title = " ".join(context.args[1:])
-    uid = await resolve_user(target_text, context)
-    if not uid:
-        await update.message.reply_text("❌ Пользователь не найден.")
-        return
+
+    # Поиск среди администраторов (как в вашем примере)
+    member = None
     try:
-        await give_prefix(context, uid, title)
-        await update.message.reply_text(f"🏷️ Префикс '{title}' выдан.")
+        admins = await context.bot.get_chat_administrators(config.GROUP_CHAT_ID)
+        for admin in admins:
+            user = admin.user
+            if user.username and user.username.lower() == username.lower():
+                member = user
+                break
+    except Exception as e:
+        await update.message.reply_text(f"Ошибка получения администраторов: {e}")
+        return
+
+    if not member:
+        await update.message.reply_text("❌ Пользователь не найден среди администраторов.")
+        return
+
+    try:
+        await give_prefix(context, member.id, title)
+        await update.message.reply_text(f"🏷️ Префикс '{title}' выдан пользователю @{username}.")
     except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
 
@@ -278,7 +243,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dur_str = context.args[1].lower()
     uid = await resolve_user(target_text, context)
     if not uid:
-        await update.message.reply_text("❌ Пользователь не найден.")
+        await update.message.reply_text("❌ Пользователь не найден в группе.")
         return
 
     if dur_str == "forever":
@@ -302,7 +267,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await context.bot.restrict_chat_member(
-            chat_id=GROUP_CHAT_ID,
+            chat_id=config.GROUP_CHAT_ID,
             user_id=uid,
             permissions=MUTE_PERMISSIONS,
             until_date=until_date,
@@ -328,7 +293,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = f"ID {uid}"
     await update.message.reply_text(f"🔇 {name} замучен на {label}.")
     await notify_admins(context, f"🔇 Админ замутил {name} на {label}.")
-    await context.bot.send_message(GROUP_CHAT_ID, f"🔇 {name} получил мут на {label}.")
+    await context.bot.send_message(config.GROUP_CHAT_ID, f"🔇 {name} получил мут на {label}.")
 
 async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await is_user_admin(update.effective_user.id, context):
@@ -339,12 +304,12 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     uid = await resolve_user(context.args[0], context)
     if not uid:
-        await update.message.reply_text("❌ Пользователь не найден.")
+        await update.message.reply_text("❌ Пользователь не найден в группе.")
         return
 
     try:
         await context.bot.restrict_chat_member(
-            chat_id=GROUP_CHAT_ID,
+            chat_id=config.GROUP_CHAT_ID,
             user_id=uid,
             permissions=UNMUTE_PERMISSIONS,
             until_date=0,
@@ -364,7 +329,7 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = f"ID {uid}"
     await update.message.reply_text(f"🔊 Мут снят с {name}.")
     await notify_admins(context, f"🔊 Админ размутил {name}.")
-    await context.bot.send_message(GROUP_CHAT_ID, f"🔊 {name} снова может писать.")
+    await context.bot.send_message(config.GROUP_CHAT_ID, f"🔊 {name} снова может писать.")
 
 # -------------------------------------------------------------------
 # Админ-панель
@@ -379,62 +344,59 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prefixes = db.get("prefixes", [])
     text += "*Активные префиксы:*\n"
-    if prefixes:
-        for p in prefixes:
-            try:
-                user = await context.bot.get_chat(p["user_id"])
-                name = f"@{user.username}" if user.username else user.first_name
-            except:
-                name = f"ID {p['user_id']}"
-            if p.get("expires_at"):
-                exp = datetime.fromtimestamp(p["expires_at"]).strftime("%d.%m.%Y %H:%M")
-                text += f"  {name} — {p['title']} до {exp}\n"
-            else:
-                text += f"  {name} — {p['title']} (навсегда)\n"
-    else:
+    for p in prefixes:
+        try:
+            user = await context.bot.get_chat(p["user_id"])
+            name = f"@{user.username}" if user.username else user.first_name
+        except:
+            name = f"ID {p['user_id']}"
+        if p.get("expires_at"):
+            exp = datetime.fromtimestamp(p["expires_at"]).strftime("%d.%m.%Y %H:%M")
+            text += f"  {name} — {p['title']} до {exp}\n"
+        else:
+            text += f"  {name} — {p['title']} (навсегда)\n"
+    if not prefixes:
         text += "  (пусто)\n"
 
     mutes = db.get("mutes", [])
     now_ts = datetime.utcnow().timestamp()
-    active_mutes = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
+    active = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
     text += "\n*Текущие муты:*\n"
-    if active_mutes:
-        for m in active_mutes:
-            try:
-                user = await context.bot.get_chat(m["target_id"])
-                name = f"@{user.username}" if user.username else user.first_name
-            except:
-                name = f"ID {m['target_id']}"
-            if m.get("until_date"):
-                exp = datetime.fromtimestamp(m["until_date"]).strftime("%d.%m.%Y %H:%M")
-                text += f"  {name} — до {exp}\n"
-            else:
-                text += f"  {name} — навсегда\n"
-    else:
+    for m in active:
+        try:
+            user = await context.bot.get_chat(m["target_id"])
+            name = f"@{user.username}" if user.username else user.first_name
+        except:
+            name = f"ID {m['target_id']}"
+        if m.get("until_date"):
+            exp = datetime.fromtimestamp(m["until_date"]).strftime("%d.%m.%Y %H:%M")
+            text += f"  {name} — до {exp}\n"
+        else:
+            text += f"  {name} — навсегда\n"
+    if not active:
         text += "  (пусто)\n"
 
     history = db.get("history", [])
     text += "\n*Последние покупки:*\n"
-    if history:
-        for h in history[-10:]:
-            try:
-                buyer = await context.bot.get_chat(h["buyer_id"])
-                bname = f"@{buyer.username}" if buyer.username else buyer.first_name
-            except:
-                bname = f"ID {h['buyer_id']}"
-            ts = datetime.fromtimestamp(h["timestamp"]).strftime("%d.%m.%Y %H:%M")
-            text += f"  {ts} — {bname}: {h['product']} {h['details']}\n"
-    else:
+    for h in history[-10:]:
+        try:
+            buyer = await context.bot.get_chat(h["buyer_id"])
+            bname = f"@{buyer.username}" if buyer.username else buyer.first_name
+        except:
+            bname = f"ID {h['buyer_id']}"
+        ts = datetime.fromtimestamp(h["timestamp"]).strftime("%d.%m.%Y %H:%M")
+        text += f"  {ts} — {bname}: {h['product']} {h['details']}\n"
+    if not history:
         text += "  (пусто)\n"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
 # -------------------------------------------------------------------
-# Магазин (меню и обработка)
+# Магазин
 # -------------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
-        await update.message.reply_text("Пожалуйста, используйте /start в личном чате со мной.")
+        await update.message.reply_text("Пожалуйста, используйте /start в личном чате.")
         return
     keyboard = [
         [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
@@ -519,7 +481,6 @@ async def show_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-# Карточки товаров
 async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -529,12 +490,8 @@ async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Получите зелёный custom title в группе.\n"
         "────────────────\n"
         "Цены:\n"
-        "10 мин — 50 ⭐\n"
-        "1 час — 80 ⭐\n"
-        "5 часов — 150 ⭐\n"
-        "10 часов — 250 ⭐\n"
-        "24 часа — 350 ⭐\n"
-        "Навсегда — 400 ⭐\n"
+        "10 мин — 50 ⭐\n1 час — 80 ⭐\n5 часов — 150 ⭐\n"
+        "10 часов — 250 ⭐\n24 часа — 350 ⭐\nНавсегда — 400 ⭐\n"
         "Выберите длительность:"
     )
     keyboard = [
@@ -573,12 +530,8 @@ async def show_mute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Замутить любого участника группы.\n"
         "────────────────\n"
         "Цены:\n"
-        "10 мин — 50 ⭐\n"
-        "1 час — 100 ⭐\n"
-        "5 часов — 200 ⭐\n"
-        "10 часов — 250 ⭐\n"
-        "24 часа — 300 ⭐\n"
-        "Навсегда — 1000 ⭐\n"
+        "10 мин — 50 ⭐\n1 час — 100 ⭐\n5 часов — 200 ⭐\n"
+        "10 часов — 250 ⭐\n24 часа — 300 ⭐\nНавсегда — 1000 ⭐\n"
         "Сначала выберите длительность:"
     )
     keyboard = [
@@ -622,13 +575,9 @@ async def show_unmute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
-# -------------------------------------------------------------------
-# Обработчик ввода цели для покупки
-# -------------------------------------------------------------------
 async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
-
     user_data = context.user_data
     msg_text = update.message.text.strip()
 
@@ -638,12 +587,10 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not target_id:
             await update.message.reply_text("❌ Пользователь не найден в группе.")
             return
-
         db = load_db()
         if any(m["target_id"] == target_id for m in db.get("mutes", [])):
             await update.message.reply_text("🔇 Этот пользователь уже замучен.")
             return
-
         amount = MUTE_PRICES[dur]
         await update.message.reply_invoice(
             title="Покупка мута",
@@ -661,12 +608,10 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not target_id:
             await update.message.reply_text("❌ Пользователь не найден в группе.")
             return
-
         db = load_db()
         if not any(m["target_id"] == target_id for m in db.get("mutes", [])):
             await update.message.reply_text("🔊 Этот пользователь не замучен ботом.")
             return
-
         await update.message.reply_invoice(
             title="Размут",
             description="Снять мут с пользователя",
@@ -677,9 +622,6 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             start_parameter="unmute",
         )
 
-# -------------------------------------------------------------------
-# Платёжные обработчики
-# -------------------------------------------------------------------
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
     await query.answer(ok=True)
@@ -725,7 +667,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await notify_admins(context, f"🟢 {buyer_name} ({buyer_mention}) купил префикс на {DURATION_LABELS[dur]}.")
         await context.bot.send_message(
-            GROUP_CHAT_ID,
+            config.GROUP_CHAT_ID,
             f"🎉 {buyer_mention} приобрёл зелёный префикс на {DURATION_LABELS[dur]}.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
@@ -746,7 +688,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         try:
             await context.bot.restrict_chat_member(
-                chat_id=GROUP_CHAT_ID,
+                chat_id=config.GROUP_CHAT_ID,
                 user_id=target_id,
                 permissions=MUTE_PERMISSIONS,
                 until_date=until_date,
@@ -782,7 +724,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await add_to_history(context, buyer.id, "Мут", f"{target_name} на {DURATION_LABELS[dur]}")
         await notify_admins(context, f"🔇 {buyer_name} ({buyer_mention}) замутил {target_name} на {DURATION_LABELS[dur]}.")
         await context.bot.send_message(
-            GROUP_CHAT_ID,
+            config.GROUP_CHAT_ID,
             f"🔇 {buyer_mention} замутил {target_name} на {DURATION_LABELS[dur]}.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
@@ -793,7 +735,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         target_id = int(payload.split("_")[1])
         try:
             await context.bot.restrict_chat_member(
-                chat_id=GROUP_CHAT_ID,
+                chat_id=config.GROUP_CHAT_ID,
                 user_id=target_id,
                 permissions=UNMUTE_PERMISSIONS,
                 until_date=0,
@@ -814,7 +756,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await add_to_history(context, buyer.id, "Размут", target_name)
         await notify_admins(context, f"🔊 {buyer_name} ({buyer_mention}) размутил {target_name}.")
         await context.bot.send_message(
-            GROUP_CHAT_ID,
+            config.GROUP_CHAT_ID,
             f"🔊 {buyer_mention} размутил {target_name}.",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
@@ -822,7 +764,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 # -------------------------------------------------------------------
-# Восстановление отложенных задач при запуске
+# Восстановление задач при запуске
 # -------------------------------------------------------------------
 async def restore_scheduled_jobs(app: Application):
     db = load_db()
@@ -879,13 +821,13 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
     )
-    app = Application.builder().token(BOT_TOKEN).build()
+    app = Application.builder().token(config.BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("prefix", cmd_prefix))
     app.add_handler(CommandHandler("mute", cmd_mute))
     app.add_handler(CommandHandler("unmute", cmd_unmute))
-    app.add_handler(CommandHandler("prefix", cmd_prefix))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_input))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
