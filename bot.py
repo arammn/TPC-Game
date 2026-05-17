@@ -63,14 +63,14 @@ def save_db(data):
 # Цены и длительности
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
-    "10min": 1, "1hour": 80, "5hours": 150,
+    "10min": 50, "1hour": 80, "5hours": 150,
     "10hours": 250, "24hours": 350, "forever": 400,
 }
 MUTE_PRICES = {
-    "10min": 1, "1hour": 100, "5hours": 200,
+    "10min": 50, "1hour": 100, "5hours": 200,
     "10hours": 250, "24hours": 300, "forever": 1000,
 }
-UNMUTE_PRICE = 1
+UNMUTE_PRICE = 70
 
 DURATION_LABELS = {
     "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
@@ -114,36 +114,40 @@ UNMUTE_PERMISSIONS = ChatPermissions(
 )
 
 # -------------------------------------------------------------------
-# Поиск пользователя
+# Поиск пользователя (исправлен под ваш пример)
 # -------------------------------------------------------------------
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
+    """
+    Находит пользователя по @username или числовому ID.
+    Использует get_chat (как в /id) и проверку членства.
+    """
     text = text.strip()
-    # Числовой ID
-    try:
+
+    # 1. Числовой ID
+    if text.isdigit():
         user_id = int(text)
-        await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
-        return user_id
-    except:
-        pass
+        try:
+            await context.bot.get_chat_member(GROUP_CHAT_ID, user_id)
+            return user_id
+        except Exception:
+            pass
 
-    # Username (с @ или без)
+    # 2. Username (с @ или без)
     username = text.lstrip('@')
-    if username:
-        # Прямой запрос через get_chat_member
-        try:
-            member = await context.bot.get_chat_member(GROUP_CHAT_ID, "@" + username)
-            return member.user.id
-        except:
-            pass
+    if not username:
+        return None
 
-        # Запасной: get_chat
+    # Пробуем разные варианты, аналогично вашему /id
+    for name_variant in (f"@{username}", username):
         try:
-            user = await context.bot.get_chat("@" + username)
-            if user.type == 'private':
-                await context.bot.get_chat_member(GROUP_CHAT_ID, user.id)
-                return user.id
-        except:
-            pass
+            chat = await context.bot.get_chat(name_variant)
+            # Проверяем, что это пользователь, и он в группе
+            if chat.type == "private":
+                await context.bot.get_chat_member(GROUP_CHAT_ID, chat.id)
+                return chat.id
+        except Exception:
+            continue
+
     return None
 
 # -------------------------------------------------------------------
@@ -217,7 +221,6 @@ async def give_prefix(context, user_id, title):
 
 async def remove_prefix(context, user_id):
     """Снимает префикс: демоут + бан/разбан."""
-    # Убираем админку
     await context.bot.promote_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=user_id,
@@ -231,7 +234,6 @@ async def remove_prefix(context, user_id):
         can_manage_chat=False,
         is_anonymous=False,
     )
-    # Удаляем и возвращаем пользователя (очищает титул)
     await context.bot.ban_chat_member(
         chat_id=GROUP_CHAT_ID,
         user_id=user_id,
@@ -279,7 +281,6 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Пользователь не найден.")
         return
 
-    # Обработка длительности
     if dur_str == "forever":
         until_date = None
         until_db = None
@@ -310,7 +311,6 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Не удалось замутить: {e}")
         return
 
-    # Сохраняем в БД
     db = load_db()
     db["mutes"] = [m for m in db["mutes"] if m["target_id"] != uid]
     db["mutes"].append({
@@ -321,7 +321,6 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     save_db(db)
 
-    # Оповещение
     try:
         user = await context.bot.get_chat(uid)
         name = f"@{user.username}" if user.username else user.first_name
@@ -378,7 +377,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = load_db()
     text = "🛡️ *Панель администратора*\n\n"
 
-    # Префиксы
     prefixes = db.get("prefixes", [])
     text += "*Активные префиксы:*\n"
     if prefixes:
@@ -396,7 +394,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "  (пусто)\n"
 
-    # Муты
     mutes = db.get("mutes", [])
     now_ts = datetime.utcnow().timestamp()
     active_mutes = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
@@ -416,7 +413,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "  (пусто)\n"
 
-    # История
     history = db.get("history", [])
     text += "\n*Последние покупки:*\n"
     if history:
@@ -719,7 +715,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         save_db(db)
         await add_to_history(context, buyer.id, "Префикс", f"на {DURATION_LABELS[dur]}")
 
-        # Планируем автоматическое снятие префикса
         if expires_in:
             async def demote():
                 await remove_prefix(context, buyer.id)
@@ -770,7 +765,6 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         })
         save_db(db)
 
-        # Очистка записи после истечения
         if until_db:
             async def cleanup():
                 db2 = load_db()
