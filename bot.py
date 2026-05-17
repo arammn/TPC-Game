@@ -24,7 +24,7 @@ import config
 from db import load_db, save_db
 
 # -------------------------------------------------------------------
-# Наборы прав для мута/размута
+# Наборы прав
 # -------------------------------------------------------------------
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
@@ -59,14 +59,14 @@ UNMUTE_PERMISSIONS = ChatPermissions(
 # Цены и длительности
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
-    "10min": 50, "1hour": 80, "5hours": 150,
+    "10min": 1, "1hour": 80, "5hours": 150,
     "10hours": 250, "24hours": 350, "forever": 400,
 }
 MUTE_PRICES = {
-    "10min": 50, "1hour": 100, "5hours": 200,
+    "10min": 1, "1hour": 100, "5hours": 200,
     "10hours": 250, "24hours": 300, "forever": 1000,
 }
-UNMUTE_PRICE = 70
+UNMUTE_PRICE = 1
 
 DURATION_LABELS = {
     "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
@@ -85,9 +85,8 @@ async def delayed_task(delay: float, coro):
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: int) -> Optional[int]:
-    """Поиск пользователя в конкретной группе по @username или числовому ID."""
+    """Поиск пользователя по @username или ID в конкретной группе."""
     text = text.strip()
-    # 1. Числовой ID
     if text.isdigit():
         user_id = int(text)
         try:
@@ -96,7 +95,6 @@ async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: 
         except:
             pass
 
-    # 2. Username
     username = text.lstrip('@')
     if not username:
         return None
@@ -107,6 +105,7 @@ async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: 
             return member.user.id
         except:
             continue
+
     try:
         user = await context.bot.get_chat(f"@{username}")
         if user.type == "private":
@@ -128,6 +127,26 @@ async def is_user_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE, group_
 async def is_group_registered(group_id: int) -> bool:
     db = load_db()
     return group_id in db.get("registered_groups", [])
+
+async def get_user_groups(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> List[int]:
+    db = load_db()
+    registered = db.get("registered_groups", [])
+    user_groups = []
+    for gid in registered:
+        try:
+            member = await context.bot.get_chat_member(gid, user_id)
+            if member.status in ("member", "administrator", "creator"):
+                user_groups.append(gid)
+        except:
+            continue
+    return user_groups
+
+async def get_group_name(context, gid: int) -> str:
+    try:
+        chat = await context.bot.get_chat(gid)
+        return chat.title or f"ID {gid}"
+    except:
+        return f"ID {gid}"
 
 async def add_to_history(context, buyer_id, group_id, product, details):
     db = load_db()
@@ -155,13 +174,13 @@ async def notify_admins(context, group_id: int, text: str):
         logging.error(f"Notify admins error: {e}")
 
 # -------------------------------------------------------------------
-# Префикс (исправленная версия)
+# Префикс
 # -------------------------------------------------------------------
 async def give_prefix(context, group_id: int, user_id: int, title: str) -> bool:
     try:
         member = await context.bot.get_chat_member(group_id, user_id)
     except Exception as e:
-        raise Exception(f"Не удалось получить информацию о пользователе: {e}")
+        raise Exception(f"Не удалось получить информацию: {e}")
 
     if member.status == "creator":
         raise Exception("Невозможно установить префикс создателю группы.")
@@ -184,7 +203,7 @@ async def give_prefix(context, group_id: int, user_id: int, title: str) -> bool:
                 can_delete_stories=False,
             )
         except Exception as e:
-            raise Exception(f"Не удалось повысить пользователя: {e}")
+            raise Exception(f"Не удалось повысить: {e}")
 
     try:
         await context.bot.set_chat_administrator_custom_title(
@@ -194,7 +213,6 @@ async def give_prefix(context, group_id: int, user_id: int, title: str) -> bool:
         )
     except Exception as e:
         raise Exception(f"Не удалось установить префикс: {e}")
-
     return True
 
 async def remove_prefix(context, group_id: int, user_id: int):
@@ -214,18 +232,9 @@ async def remove_prefix(context, group_id: int, user_id: int):
         )
     except Exception as e:
         logging.error(f"Demote error: {e}")
-
     try:
-        await context.bot.ban_chat_member(
-            chat_id=group_id,
-            user_id=user_id,
-            until_date=0,
-        )
-        await context.bot.unban_chat_member(
-            chat_id=group_id,
-            user_id=user_id,
-            only_if_banned=True,
-        )
+        await context.bot.ban_chat_member(chat_id=group_id, user_id=user_id, until_date=0)
+        await context.bot.unban_chat_member(chat_id=group_id, user_id=user_id, only_if_banned=True)
     except Exception as e:
         logging.error(f"Ban/unban error: {e}")
 
@@ -237,83 +246,31 @@ async def cmd_register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type not in ("group", "supergroup"):
         await update.message.reply_text("Эту команду можно использовать только в группе.")
         return
-
     user_id = update.effective_user.id
     if not await is_user_admin(user_id, context, chat_id):
-        await update.message.reply_text("⛔ Только администратор группы может зарегистрировать её.")
+        await update.message.reply_text("⛔ Только администратор может зарегистрировать группу.")
         return
 
     db = load_db()
     if "registered_groups" not in db:
         db["registered_groups"] = []
-
     if chat_id in db["registered_groups"]:
         await update.message.reply_text("ℹ️ Эта группа уже зарегистрирована.")
         return
-
     db["registered_groups"].append(chat_id)
     save_db(db)
-    await update.message.reply_text("✅ Группа успешно зарегистрирована! Бот готов к работе.")
+    await update.message.reply_text("✅ Группа зарегистрирована!")
 
 # -------------------------------------------------------------------
-# Вспомогательные функции для магазина – выбор группы
-# -------------------------------------------------------------------
-async def get_user_groups(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> List[int]:
-    """Возвращает список ID зарегистрированных групп, в которых состоит пользователь."""
-    db = load_db()
-    registered = db.get("registered_groups", [])
-    user_groups = []
-    for gid in registered:
-        try:
-            member = await context.bot.get_chat_member(gid, user_id)
-            if member.status in ("member", "administrator", "creator"):
-                user_groups.append(gid)
-        except:
-            continue
-    return user_groups
-
-async def choose_group(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> Optional[int]:
-    """Предлагает пользователю выбрать группу (если больше одной) и возвращает group_id или None."""
-    groups = await get_user_groups(user_id, context)
-    if not groups:
-        await update.message.reply_text("❌ Вы не состоите ни в одной зарегистрированной группе.")
-        return None
-    if len(groups) == 1:
-        return groups[0]
-
-    # Если несколько групп, показываем кнопки выбора
-    keyboard = []
-    for gid in groups:
-        try:
-            chat = await context.bot.get_chat(gid)
-            name = chat.title or f"ID {gid}"
-        except:
-            name = f"ID {gid}"
-        keyboard.append([InlineKeyboardButton(name, callback_data=f"select_group_{gid}")])
-    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="main_menu")])
-    await update.message.reply_text(
-        "Выберите группу, в которой хотите совершить покупку:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
-    return None  # ждём коллбэк
-
-async def get_group_name(context, gid: int) -> str:
-    try:
-        chat = await context.bot.get_chat(gid)
-        return chat.title or f"ID {gid}"
-    except:
-        return f"ID {gid}"
-
-# -------------------------------------------------------------------
-# Команды администраторов (в группах, бесплатные)
+# Команды в группе (бесплатные)
 # -------------------------------------------------------------------
 async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.effective_chat.id
     if not await is_group_registered(group_id):
-        await update.message.reply_text("❌ Группа не зарегистрирована. Используйте /register.")
+        await update.message.reply_text("❌ Группа не зарегистрирована. /register")
         return
     if not await is_user_admin(update.effective_user.id, context, group_id):
-        await update.message.reply_text("⛔ Только для администраторов.")
+        await update.message.reply_text("⛔ Только для админов.")
         return
     if len(context.args) < 2:
         await update.message.reply_text("Использование: /prefix @username Название")
@@ -321,7 +278,6 @@ async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     username = context.args[0].replace("@", "")
     title = " ".join(context.args[1:])
-
     member = None
     try:
         admins = await context.bot.get_chat_administrators(group_id)
@@ -331,7 +287,7 @@ async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 member = user
                 break
     except Exception as e:
-        await update.message.reply_text(f"Ошибка получения администраторов: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
         return
 
     if not member:
@@ -340,17 +296,17 @@ async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await give_prefix(context, group_id, member.id, title)
-        await update.message.reply_text(f"🏷️ Префикс '{title}' выдан пользователю @{username}.")
+        await update.message.reply_text(f"🏷️ Префикс '{title}' выдан @{username}.")
     except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
 
 async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.effective_chat.id
     if not await is_group_registered(group_id):
-        await update.message.reply_text("❌ Группа не зарегистрирована. Используйте /register.")
+        await update.message.reply_text("❌ Группа не зарегистрирована.")
         return
     if not await is_user_admin(update.effective_user.id, context, group_id):
-        await update.message.reply_text("⛔ Только для администраторов.")
+        await update.message.reply_text("⛔ Только для админов.")
         return
     if len(context.args) < 2:
         await update.message.reply_text("Использование: /mute @username <10m|1h|forever>")
@@ -359,7 +315,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dur_str = context.args[1].lower()
     uid = await resolve_user(target_text, context, group_id)
     if not uid:
-        await update.message.reply_text("❌ Пользователь не найден в группе.")
+        await update.message.reply_text("❌ Пользователь не найден.")
         return
 
     if dur_str == "forever":
@@ -394,7 +350,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     db = load_db()
-    db["mutes"] = [m for m in db["mutes"] if not (m["target_id"] == uid and m["group_id"] == group_id)]
+    db["mutes"] = [m for m in db["mutes"] if not (m["target_id"] == uid and m.get("group_id") == group_id)]
     db["mutes"].append({
         "target_id": uid,
         "muter_id": update.effective_user.id,
@@ -416,17 +372,17 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     group_id = update.effective_chat.id
     if not await is_group_registered(group_id):
-        await update.message.reply_text("❌ Группа не зарегистрирована. Используйте /register.")
+        await update.message.reply_text("❌ Группа не зарегистрирована.")
         return
     if not await is_user_admin(update.effective_user.id, context, group_id):
-        await update.message.reply_text("⛔ Только для администраторов.")
+        await update.message.reply_text("⛔ Только для админов.")
         return
     if not context.args:
         await update.message.reply_text("Использование: /unmute @username")
         return
     uid = await resolve_user(context.args[0], context, group_id)
     if not uid:
-        await update.message.reply_text("❌ Пользователь не найден в группе.")
+        await update.message.reply_text("❌ Пользователь не найден.")
         return
 
     try:
@@ -441,7 +397,7 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     db = load_db()
-    db["mutes"] = [m for m in db["mutes"] if not (m["target_id"] == uid and m["group_id"] == group_id)]
+    db["mutes"] = [m for m in db["mutes"] if not (m["target_id"] == uid and m.get("group_id") == group_id)]
     save_db(db)
 
     try:
@@ -454,319 +410,244 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(group_id, f"🔊 {name} снова может писать.")
 
 # -------------------------------------------------------------------
-# Админ-панель (выбор группы)
+# Личный кабинет – выбор группы
 # -------------------------------------------------------------------
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("Пожалуйста, используйте /start в личном чате.")
+        return
+
     user_id = update.effective_user.id
     groups = await get_user_groups(user_id, context)
     if not groups:
         await update.message.reply_text("❌ Вы не состоите ни в одной зарегистрированной группе.")
         return
+
     if len(groups) == 1:
-        group_id = groups[0]
-        await show_admin_panel(update, context, group_id)
+        context.user_data["selected_group"] = groups[0]
+        await show_main_menu(update, context)
     else:
         keyboard = []
         for gid in groups:
             name = await get_group_name(context, gid)
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"admin_group_{gid}")])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="main_menu")])
+            keyboard.append([InlineKeyboardButton(name, callback_data=f"select_group_{gid}")])
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
         await update.message.reply_text(
-            "Выберите группу для просмотра панели администратора:",
+            "Выберите группу для взаимодействия:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
-async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE, group_id: int):
-    db = load_db()
-    text = f"🛡️ *Панель администратора*\nГруппа: {await get_group_name(context, group_id)}\n\n"
-
-    prefixes = [p for p in db.get("prefixes", []) if p.get("group_id") == group_id]
-    text += "*Активные префиксы:*\n"
-    for p in prefixes:
-        try:
-            user = await context.bot.get_chat(p["user_id"])
-            name = f"@{user.username}" if user.username else user.first_name
-        except:
-            name = f"ID {p['user_id']}"
-        if p.get("expires_at"):
-            exp = datetime.fromtimestamp(p["expires_at"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
-            text += f"  {name} — {p['title']} до {exp}\n"
-        else:
-            text += f"  {name} — {p['title']} (навсегда)\n"
-    if not prefixes:
-        text += "  (пусто)\n"
-
-    mutes = [m for m in db.get("mutes", []) if m.get("group_id") == group_id]
-    now_ts = datetime.now(timezone.utc).timestamp()
-    active = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
-    text += "\n*Текущие муты:*\n"
-    for m in active:
-        try:
-            user = await context.bot.get_chat(m["target_id"])
-            name = f"@{user.username}" if user.username else user.first_name
-        except:
-            name = f"ID {m['target_id']}"
-        if m.get("until_date"):
-            exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
-            text += f"  {name} — до {exp}\n"
-        else:
-            text += f"  {name} — навсегда\n"
-    if not active:
-        text += "  (пусто)\n"
-
-    history = [h for h in db.get("history", []) if h.get("group_id") == group_id]
-    text += "\n*Последние покупки:*\n"
-    for h in history[-10:]:
-        try:
-            buyer = await context.bot.get_chat(h["buyer_id"])
-            bname = f"@{buyer.username}" if buyer.username else buyer.first_name
-        except:
-            bname = f"ID {h['buyer_id']}"
-        ts = datetime.fromtimestamp(h["timestamp"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
-        text += f"  {ts} — {bname}: {h['product']} {h['details']}\n"
-    if not history:
-        text += "  (пусто)\n"
-
-    await update.message.reply_text(text, parse_mode="Markdown")
-
-# -------------------------------------------------------------------
-# Магазин (в личных сообщениях)
-# -------------------------------------------------------------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type != "private":
-        await update.message.reply_text("Пожалуйста, используйте /start в личном чате со мной.")
-        return
-    keyboard = [
-        [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
-        [InlineKeyboardButton("🛒 Магазин", callback_data="shop")],
-    ]
-    await update.message.reply_text(
-        "🎛️ *Панель управления*\nВыберите раздел:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
-    )
-
-async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def select_group_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    data = query.data
+    if data == "cancel":
+        await query.edit_message_text("Действие отменено.")
+        return
+    gid = int(data.split("_")[2])
+    context.user_data["selected_group"] = gid
+    await query.edit_message_text(f"Группа выбрана: {await get_group_name(context, gid)}")
+    await show_main_menu(update, context)
+
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("👤 Профиль", callback_data="profile")],
         [InlineKeyboardButton("🛒 Магазин", callback_data="shop")],
+        [InlineKeyboardButton("🛡️ Админ-панель", callback_data="admin_panel")],
+        [InlineKeyboardButton("🔄 Сменить группу", callback_data="change_group")],
     ]
-    await query.edit_message_text(
-        "🎛️ *Панель управления*\nВыберите раздел:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
-    )
+    text = "🎛️ *Главное меню*\nВыберите раздел:"
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# -------------------------------------------------------------------
+# Профиль, Магазин, Админ-панель (в личке)
+# -------------------------------------------------------------------
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-    db = load_db()
-    # профиль показывает данные по всем группам
-    text = "👤 *Ваш профиль*\n\n"
-    groups = await get_user_groups(user_id, context)
-    if not groups:
-        text += "Вы не состоите в зарегистрированных группах."
-    for gid in groups:
-        gname = await get_group_name(context, gid)
-        text += f"\n📁 *{gname}:*\n"
-        prefix = next((p for p in db.get("prefixes", []) if p["user_id"] == user_id and p.get("group_id") == gid), None)
-        if prefix:
-            if prefix.get("expires_at"):
-                exp = datetime.fromtimestamp(prefix["expires_at"], tz=timezone.utc)
-                remaining = exp - datetime.now(timezone.utc)
-                if remaining.total_seconds() > 0:
-                    text += f"  🏷️ Префикс: {prefix['title']} (истекает через {str(remaining).split('.')[0]})\n"
-                else:
-                    text += "  🏷️ Префикс: истёк\n"
-            else:
-                text += f"  🏷️ Префикс: {prefix['title']} (навсегда)\n"
-        else:
-            text += "  🏷️ Нет активного префикса\n"
+    group_id = context.user_data.get("selected_group")
+    if not group_id:
+        await query.edit_message_text("Сначала выберите группу через /start.")
+        return
 
-        mutes = [m for m in db.get("mutes", []) if m["muter_id"] == user_id and m.get("group_id") == gid]
-        if mutes:
-            text += "  🔇 Купленные муты:\n"
-            for m in mutes:
-                try:
-                    target = await context.bot.get_chat(m["target_id"])
-                    tname = f"@{target.username}" if target.username else target.first_name
-                except:
-                    tname = f"ID {m['target_id']}"
-                if m.get("until_date"):
-                    if m["until_date"] > datetime.now(timezone.utc).timestamp():
-                        exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%H:%M")
-                        text += f"    → {tname}: до {exp}\n"
-                    else:
-                        text += f"    → {tname}: истёк\n"
-                else:
-                    text += f"    → {tname}: Навсегда\n"
+    db = load_db()
+    prefix = next((p for p in db["prefixes"] if p["user_id"] == user_id and p.get("group_id") == group_id), None)
+    mutes = [m for m in db["mutes"] if m["muter_id"] == user_id and m.get("group_id") == group_id]
+    now = datetime.now(timezone.utc).timestamp()
+
+    text = f"👤 *Профиль*\nГруппа: {await get_group_name(context, group_id)}\n\n"
+    if prefix:
+        if prefix.get("expires_at"):
+            exp = datetime.fromtimestamp(prefix["expires_at"], tz=timezone.utc)
+            remaining = exp - datetime.now(timezone.utc)
+            if remaining.total_seconds() > 0:
+                text += f"🏷️ Префикс: {prefix['title']} (истекает через {str(remaining).split('.')[0]})\n"
+            else:
+                text += "🏷️ Префикс: истёк\n"
         else:
-            text += "  🔇 Нет купленных мутов\n"
+            text += f"🏷️ Префикс: {prefix['title']} (навсегда)\n"
+    else:
+        text += "🏷️ Нет активного префикса\n"
+
+    if mutes:
+        text += "\n🔇 *Купленные муты:*\n"
+        for m in mutes:
+            try:
+                user = await context.bot.get_chat(m["target_id"])
+                name = f"@{user.username}" if user.username else user.first_name
+            except:
+                name = f"ID {m['target_id']}"
+            if m.get("until_date"):
+                if m["until_date"] > now:
+                    exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%H:%M")
+                    text += f"  → {name}: до {exp}\n"
+                else:
+                    text += f"  → {name}: истёк\n"
+            else:
+                text += f"  → {name}: Навсегда\n"
+    else:
+        text += "\n🔇 Нет купленных мутов"
 
     keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def show_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     keyboard = [
-        [InlineKeyboardButton("🏷️ Префикс", callback_data="shop_prefix")],
-        [InlineKeyboardButton("🔇 Мут", callback_data="shop_mute")],
-        [InlineKeyboardButton("🔊 Размут", callback_data="shop_unmute")],
+        [InlineKeyboardButton("🏷️ Префикс", callback_data="buy_prefix")],
+        [InlineKeyboardButton("🔇 Мут", callback_data="buy_mute")],
+        [InlineKeyboardButton("🔊 Размут", callback_data="buy_unmute")],
         [InlineKeyboardButton("🔙 Назад", callback_data="main_menu")],
     ]
-    await query.edit_message_text(
-        "🛒 *Магазин*\nВыберите товар:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
-    )
+    await query.edit_message_text("🛒 *Магазин*\nВыберите товар:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def start_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE, product_type: str):
-    """Общий обработчик начала покупки: выбор группы, затем показ карточки товара."""
+async def buy_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    groups = await get_user_groups(user_id, context)
-    if not groups:
-        await query.edit_message_text("❌ Вы не состоите ни в одной зарегистрированной группе.")
+    group_id = context.user_data.get("selected_group")
+    if not group_id:
+        await query.edit_message_text("Сначала выберите группу.")
         return
-    if len(groups) == 1:
-        group_id = groups[0]
-        context.user_data["purchase_group_id"] = group_id
-        if product_type == "prefix":
-            await show_prefix_card(update, context)
-        elif product_type == "mute":
-            await show_mute_card(update, context)
-        elif product_type == "unmute":
-            await show_unmute_card(update, context)
-    else:
-        keyboard = []
-        for gid in groups:
-            name = await get_group_name(context, gid)
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"pick_{product_type}_{gid}")])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="shop")])
-        await query.edit_message_text(
-            "Выберите группу для покупки:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    context.user_data["buy_product"] = "prefix"
     text = (
         "🏷️ *Префикс*\n"
-        "────────────────\n"
-        "Получите зелёный custom title в группе.\n"
-        "────────────────\n"
-        "Цены:\n"
-        "10 мин — 50 ⭐\n1 час — 80 ⭐\n5 часов — 150 ⭐\n"
-        "10 часов — 250 ⭐\n24 часа — 350 ⭐\nНавсегда — 400 ⭐\n"
-        "Выберите длительность:"
+        "Выберите длительность:\n"
+        "10 мин — 50⭐ | 1 час — 80⭐ | 5 часов — 150⭐\n"
+        "10 часов — 250⭐ | 24 часа — 350⭐ | Навсегда — 400⭐"
     )
     keyboard = [
-        [InlineKeyboardButton("10 мин · 50⭐", callback_data="prefix_dur_10min")],
-        [InlineKeyboardButton("1 час · 80⭐", callback_data="prefix_dur_1hour")],
-        [InlineKeyboardButton("5 часов · 150⭐", callback_data="prefix_dur_5hours")],
-        [InlineKeyboardButton("10 часов · 250⭐", callback_data="prefix_dur_10hours")],
-        [InlineKeyboardButton("24 часа · 350⭐", callback_data="prefix_dur_24hours")],
-        [InlineKeyboardButton("Навсегда · 400⭐", callback_data="prefix_dur_forever")],
-        [InlineKeyboardButton("🔙 Назад в магазин", callback_data="shop")],
+        [InlineKeyboardButton("10 мин", callback_data="prefix_dur_10min"),
+         InlineKeyboardButton("1 час", callback_data="prefix_dur_1hour")],
+        [InlineKeyboardButton("5 часов", callback_data="prefix_dur_5hours"),
+         InlineKeyboardButton("10 часов", callback_data="prefix_dur_10hours")],
+        [InlineKeyboardButton("24 часа", callback_data="prefix_dur_24hours"),
+         InlineKeyboardButton("Навсегда", callback_data="prefix_dur_forever")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="shop")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def handle_prefix_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    dur = query.data.split("_")[2]
-    await query.edit_message_text("💳 Отправляю счёт...")
-    await context.bot.send_invoice(
-        chat_id=query.from_user.id,
-        title="Покупка префикса",
-        description=f"Зелёный префикс на {DURATION_LABELS[dur]}",
-        payload=f"prefix_{dur}",
-        provider_token="",
-        currency="XTR",
-        prices=[LabeledPrice("Префикс", PREFIX_PRICES[dur])],
-        start_parameter="prefix",
-    )
-
-async def show_mute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+    group_id = context.user_data.get("selected_group")
+    if not group_id:
+        await query.edit_message_text("Сначала выберите группу.")
+        return
+    context.user_data["buy_product"] = "mute"
     text = (
         "🔇 *Мут*\n"
-        "────────────────\n"
-        "Замутить любого участника группы.\n"
-        "────────────────\n"
-        "Цены:\n"
-        "10 мин — 50 ⭐\n1 час — 100 ⭐\n5 часов — 200 ⭐\n"
-        "10 часов — 250 ⭐\n24 часа — 300 ⭐\nНавсегда — 1000 ⭐\n"
-        "Сначала выберите длительность:"
+        "Выберите длительность:\n"
+        "10 мин — 50⭐ | 1 час — 100⭐ | 5 часов — 200⭐\n"
+        "10 часов — 250⭐ | 24 часа — 300⭐ | Навсегда — 1000⭐"
     )
     keyboard = [
-        [InlineKeyboardButton("10 мин · 50⭐", callback_data="mute_dur_10min")],
-        [InlineKeyboardButton("1 час · 100⭐", callback_data="mute_dur_1hour")],
-        [InlineKeyboardButton("5 часов · 200⭐", callback_data="mute_dur_5hours")],
-        [InlineKeyboardButton("10 часов · 250⭐", callback_data="mute_dur_10hours")],
-        [InlineKeyboardButton("24 часа · 300⭐", callback_data="mute_dur_24hours")],
-        [InlineKeyboardButton("Навсегда · 1000⭐", callback_data="mute_dur_forever")],
-        [InlineKeyboardButton("🔙 Назад в магазин", callback_data="shop")],
+        [InlineKeyboardButton("10 мин", callback_data="mute_dur_10min"),
+         InlineKeyboardButton("1 час", callback_data="mute_dur_1hour")],
+        [InlineKeyboardButton("5 часов", callback_data="mute_dur_5hours"),
+         InlineKeyboardButton("10 часов", callback_data="mute_dur_10hours")],
+        [InlineKeyboardButton("24 часа", callback_data="mute_dur_24hours"),
+         InlineKeyboardButton("Навсегда", callback_data="mute_dur_forever")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="shop")],
     ]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def handle_mute_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def buy_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    dur = query.data.split("_")[2]
-    context.user_data["pending_mute"] = dur
+    group_id = context.user_data.get("selected_group")
+    if not group_id:
+        await query.edit_message_text("Сначала выберите группу.")
+        return
+    context.user_data["buy_product"] = "unmute"
+    context.user_data["pending_unmute"] = True
     await query.edit_message_text(
-        "Отправьте @username или числовой ID пользователя, которого хотите замутить.\n"
-        "Пример: `@username` или `123456789`",
+        "🔊 *Размут*\nЦена: 70⭐\nОтправьте @username или ID пользователя для снятия мута:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
-async def show_unmute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_duration_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    text = (
-        "🔊 *Размут*\n"
-        "────────────────\n"
-        "Снять мут с пользователя.\n"
-        "Цена: 70 ⭐\n"
-        "────────────────\n"
-        "Отправьте @username или ID человека, которого нужно размутить:"
-    )
-    context.user_data["pending_unmute"] = True
-    await query.edit_message_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
-    )
+    data = query.data
+    product = context.user_data.get("buy_product")
+    if not product:
+        await query.edit_message_text("Ошибка, начните заново из магазина.")
+        return
+
+    if product == "prefix" and data.startswith("prefix_dur_"):
+        dur = data.split("_")[2]
+        context.user_data["duration"] = dur
+        await query.edit_message_text("💳 Отправляю счёт...")
+        await context.bot.send_invoice(
+            chat_id=query.from_user.id,
+            title="Покупка префикса",
+            description=f"Зелёный префикс на {DURATION_LABELS[dur]}",
+            payload=f"prefix_{dur}",
+            provider_token="",
+            currency="XTR",
+            prices=[LabeledPrice("Префикс", PREFIX_PRICES[dur])],
+            start_parameter="prefix",
+        )
+    elif product == "mute" and data.startswith("mute_dur_"):
+        dur = data.split("_")[2]
+        context.user_data["duration"] = dur
+        context.user_data["pending_mute"] = True
+        await query.edit_message_text(
+            "Отправьте @username или ID пользователя для мута:",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
+        )
+    else:
+        await query.edit_message_text("Неверное действие.")
 
 async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
-    group_id = context.user_data.get("purchase_group_id")
+    group_id = context.user_data.get("selected_group")
     if not group_id:
-        await update.message.reply_text("Сначала выберите группу в магазине.")
+        await update.message.reply_text("Сначала выберите группу через /start.")
         return
 
     user_data = context.user_data
     msg_text = update.message.text.strip()
 
     if "pending_mute" in user_data:
-        dur = user_data.pop("pending_mute")
+        dur = user_data.pop("duration", None)
+        if not dur:
+            await update.message.reply_text("Ошибка, попробуйте снова.")
+            return
         target_id = await resolve_user(msg_text, context, group_id)
         if not target_id:
-            await update.message.reply_text("❌ Пользователь не найден в группе.")
+            await update.message.reply_text("❌ Пользователь не найден.")
             return
         db = load_db()
         if any(m["target_id"] == target_id and m.get("group_id") == group_id for m in db.get("mutes", [])):
-            await update.message.reply_text("🔇 Этот пользователь уже замучен.")
+            await update.message.reply_text("🔇 Уже замучен.")
             return
         amount = MUTE_PRICES[dur]
         await update.message.reply_invoice(
@@ -778,20 +659,19 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             prices=[LabeledPrice("Мут", amount)],
             start_parameter="mute",
         )
-
     elif "pending_unmute" in user_data:
         del user_data["pending_unmute"]
         target_id = await resolve_user(msg_text, context, group_id)
         if not target_id:
-            await update.message.reply_text("❌ Пользователь не найден в группе.")
+            await update.message.reply_text("❌ Пользователь не найден.")
             return
         db = load_db()
         if not any(m["target_id"] == target_id and m.get("group_id") == group_id for m in db.get("mutes", [])):
-            await update.message.reply_text("🔊 Этот пользователь не замучен ботом.")
+            await update.message.reply_text("🔊 Не замучен.")
             return
         await update.message.reply_invoice(
             title="Размут",
-            description="Снять мут с пользователя",
+            description="Снять мут",
             payload=f"unmute_{target_id}_{group_id}",
             provider_token="",
             currency="XTR",
@@ -799,6 +679,9 @@ async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE
             start_parameter="unmute",
         )
 
+# -------------------------------------------------------------------
+# Платёжные обработчики
+# -------------------------------------------------------------------
 async def precheckout(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.pre_checkout_query
     await query.answer(ok=True)
@@ -810,34 +693,32 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     buyer_name = buyer.full_name
     buyer_username = buyer.username
     buyer_mention = f"@{buyer_username}" if buyer_username else buyer_name
+    group_id = context.user_data.get("selected_group")
+
+    if not group_id:
+        await update.message.reply_text("Ошибка: группа не выбрана.")
+        return
 
     await update.message.reply_text("✅ Платёж успешен! Обрабатываю...")
 
     if payload.startswith("prefix_"):
         dur = payload.split("_")[1]
-        group_id = context.user_data.get("purchase_group_id")
-        if not group_id:
-            await update.message.reply_text("Ошибка: не выбрана группа.")
-            return
         title = "🟢 Premium"
         expires_in = None if dur == "forever" else DURATION_SECONDS[dur]
 
         try:
             await give_prefix(context, group_id, buyer.id, title)
         except Exception as e:
-            await update.message.reply_text(f"❌ Не удалось выдать префикс: {e}")
+            await update.message.reply_text(f"❌ Не удалось: {e}")
             return
 
         db = load_db()
-        expires_at = None
-        if expires_in:
-            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).timestamp()
+        expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).timestamp() if expires_in else None
         db["prefixes"].append({
             "user_id": buyer.id,
             "group_id": group_id,
             "title": title,
             "expires_at": expires_at,
-            "purchase_id": payload,
         })
         save_db(db)
         await add_to_history(context, buyer.id, group_id, "Префикс", f"на {DURATION_LABELS[dur]}")
@@ -846,18 +727,12 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             async def demote():
                 await remove_prefix(context, group_id, buyer.id)
                 db2 = load_db()
-                db2["prefixes"] = [p for p in db2["prefixes"] if not (p["user_id"] == buyer.id and p["title"] == title and p.get("group_id") == group_id)]
+                db2["prefixes"] = [p for p in db2["prefixes"] if not (p["user_id"] == buyer.id and p.get("group_id") == group_id)]
                 save_db(db2)
             asyncio.create_task(delayed_task(expires_in, demote))
 
-        await notify_admins(context, group_id, f"🟢 {buyer_name} ({buyer_mention}) купил префикс на {DURATION_LABELS[dur]}.")
-        await context.bot.send_message(
-            group_id,
-            f"🎉 {buyer_mention} приобрёл зелёный префикс на {DURATION_LABELS[dur]}.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
-            ]]),
-        )
+        await notify_admins(context, group_id, f"🟢 {buyer_name} купил префикс на {DURATION_LABELS[dur]}.")
+        await context.bot.send_message(group_id, f"🎉 {buyer_mention} приобрёл зелёный префикс на {DURATION_LABELS[dur]}.")
 
     elif payload.startswith("mute_"):
         parts = payload.split("_")
@@ -900,9 +775,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 db2 = load_db()
                 db2["mutes"] = [m for m in db2["mutes"] if not (m["target_id"] == target_id and m["until_date"] == until_db and m.get("group_id") == group_id)]
                 save_db(db2)
-            delay = until_db - datetime.now(timezone.utc).timestamp()
-            if delay > 0:
-                asyncio.create_task(delayed_task(delay, cleanup))
+            asyncio.create_task(delayed_task(until_db - datetime.now(timezone.utc).timestamp(), cleanup))
 
         try:
             target_user = await context.bot.get_chat(target_id)
@@ -910,14 +783,8 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except:
             target_name = f"ID {target_id}"
         await add_to_history(context, buyer.id, group_id, "Мут", f"{target_name} на {DURATION_LABELS[dur]}")
-        await notify_admins(context, group_id, f"🔇 {buyer_name} ({buyer_mention}) замутил {target_name} на {DURATION_LABELS[dur]}.")
-        await context.bot.send_message(
-            group_id,
-            f"🔇 {buyer_mention} замутил {target_name} на {DURATION_LABELS[dur]}.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
-            ]]),
-        )
+        await notify_admins(context, group_id, f"🔇 {buyer_name} замутил {target_name} на {DURATION_LABELS[dur]}.")
+        await context.bot.send_message(group_id, f"🔇 {buyer_mention} замутил {target_name} на {DURATION_LABELS[dur]}.")
 
     elif payload.startswith("unmute_"):
         parts = payload.split("_")
@@ -944,36 +811,125 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except:
             target_name = f"ID {target_id}"
         await add_to_history(context, buyer.id, group_id, "Размут", target_name)
-        await notify_admins(context, group_id, f"🔊 {buyer_name} ({buyer_mention}) размутил {target_name}.")
-        await context.bot.send_message(
-            group_id,
-            f"🔊 {buyer_mention} размутил {target_name}.",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("Сделать так же", url=f"https://t.me/{context.bot.username}?start=start")
-            ]]),
-        )
+        await notify_admins(context, group_id, f"🔊 {buyer_name} размутил {target_name}.")
+        await context.bot.send_message(group_id, f"🔊 {buyer_mention} размутил {target_name}.")
 
 # -------------------------------------------------------------------
-# Восстановление отложенных задач при запуске
+# Админ-панель (в личке)
+# -------------------------------------------------------------------
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    group_id = context.user_data.get("selected_group")
+    if not group_id:
+        await query.edit_message_text("Сначала выберите группу.")
+        return
+    await show_admin_stats(update, context, group_id)
+
+async def show_admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE, group_id: int):
+    db = load_db()
+    gname = await get_group_name(context, group_id)
+    text = f"🛡️ *Панель администратора*\nГруппа: {gname}\n\n"
+
+    prefixes = [p for p in db["prefixes"] if p.get("group_id") == group_id]
+    text += "*Префиксы:*\n"
+    for p in prefixes:
+        try:
+            user = await context.bot.get_chat(p["user_id"])
+            name = f"@{user.username}" if user.username else user.first_name
+        except:
+            name = f"ID {p['user_id']}"
+        if p.get("expires_at"):
+            exp = datetime.fromtimestamp(p["expires_at"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
+            text += f"  {name} — {p['title']} до {exp}\n"
+        else:
+            text += f"  {name} — {p['title']} (навсегда)\n"
+    if not prefixes:
+        text += "  (пусто)\n"
+
+    mutes = [m for m in db["mutes"] if m.get("group_id") == group_id]
+    now_ts = datetime.now(timezone.utc).timestamp()
+    active = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
+    text += "\n*Муты:*\n"
+    for m in active:
+        try:
+            user = await context.bot.get_chat(m["target_id"])
+            name = f"@{user.username}" if user.username else user.first_name
+        except:
+            name = f"ID {m['target_id']}"
+        if m.get("until_date"):
+            exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
+            text += f"  {name} — до {exp}\n"
+        else:
+            text += f"  {name} — навсегда\n"
+    if not active:
+        text += "  (пусто)\n"
+
+    history = [h for h in db["history"] if h.get("group_id") == group_id]
+    text += "\n*Последние покупки:*\n"
+    for h in history[-10:]:
+        try:
+            buyer = await context.bot.get_chat(h["buyer_id"])
+            bname = f"@{buyer.username}" if buyer.username else buyer.first_name
+        except:
+            bname = f"ID {h['buyer_id']}"
+        ts = datetime.fromtimestamp(h["timestamp"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
+        text += f"  {ts} — {bname}: {h['product']} {h['details']}\n"
+    if not history:
+        text += "  (пусто)\n"
+
+    keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="main_menu")]]
+    await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+# -------------------------------------------------------------------
+# Обработчик кнопок
+# -------------------------------------------------------------------
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    if data == "main_menu":
+        await show_main_menu(update, context)
+    elif data == "profile":
+        await profile(update, context)
+    elif data == "shop":
+        await shop(update, context)
+    elif data == "buy_prefix":
+        await buy_prefix(update, context)
+    elif data == "buy_mute":
+        await buy_mute(update, context)
+    elif data == "buy_unmute":
+        await buy_unmute(update, context)
+    elif data == "admin_panel":
+        await admin_panel(update, context)
+    elif data == "change_group":
+        context.user_data.pop("selected_group", None)
+        await start(update, context)
+    elif data.startswith("select_group_"):
+        await select_group_callback(update, context)
+    elif data.startswith("prefix_dur_") or data.startswith("mute_dur_"):
+        await handle_duration_selection(update, context)
+    else:
+        await query.answer("Неизвестная команда.")
+
+# -------------------------------------------------------------------
+# Восстановление задач
 # -------------------------------------------------------------------
 async def restore_scheduled_jobs(app: Application):
     db = load_db()
     now = datetime.now(timezone.utc).timestamp()
-
     for p in db.get("prefixes", []):
         if p.get("expires_at") and p.get("group_id"):
             delay = p["expires_at"] - now
             if delay > 0:
-                async def demote_restored(uid=p["user_id"], gid=p["group_id"], title=p["title"]):
+                async def demote_restored(uid=p["user_id"], gid=p["group_id"]):
                     try:
                         await remove_prefix(app.bot, gid, uid)
                     except Exception as e:
                         logging.error(f"Restore demote error: {e}")
                     db2 = load_db()
-                    db2["prefixes"] = [x for x in db2["prefixes"] if not (x["user_id"] == uid and x["title"] == title and x.get("group_id") == gid)]
+                    db2["prefixes"] = [x for x in db2["prefixes"] if not (x["user_id"] == uid and x.get("group_id") == gid)]
                     save_db(db2)
                 asyncio.create_task(delayed_task(delay, demote_restored))
-
     for m in db.get("mutes", []):
         if m.get("until_date") and m.get("group_id"):
             delay = m["until_date"] - now
@@ -985,69 +941,17 @@ async def restore_scheduled_jobs(app: Application):
                 asyncio.create_task(delayed_task(delay, cleanup_restored))
 
 # -------------------------------------------------------------------
-# Обработчик кнопок
-# -------------------------------------------------------------------
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-
-    if data == "profile":
-        await show_profile(update, context)
-    elif data == "shop":
-        await show_shop(update, context)
-    elif data == "main_menu":
-        await main_menu_callback(update, context)
-    elif data.startswith("shop_"):
-        # Обработка нажатий "Префикс", "Мут", "Размут" в магазине
-        product = data.split("_")[1]
-        await start_purchase(update, context, product)
-    elif data.startswith("pick_"):
-        # Выбор группы для покупки
-        parts = data.split("_")
-        product = parts[1]
-        group_id = int(parts[2])
-        context.user_data["purchase_group_id"] = group_id
-        if product == "prefix":
-            await show_prefix_card(update, context)
-        elif product == "mute":
-            await show_mute_card(update, context)
-        elif product == "unmute":
-            await show_unmute_card(update, context)
-    elif data.startswith("prefix_dur_"):
-        await handle_prefix_duration(update, context)
-    elif data.startswith("mute_dur_"):
-        await handle_mute_duration(update, context)
-    elif data.startswith("admin_group_"):
-        group_id = int(data.split("_")[2])
-        await show_admin_panel(update, context, group_id)
-    elif data.startswith("select_group_"):
-        group_id = int(data.split("_")[2])
-        context.user_data["purchase_group_id"] = group_id
-        # если был начат продукт, покажем его карточку
-        # но так как мы не знаем, какой продукт, просто вернёмся в магазин
-        await show_shop(update, context)
-    else:
-        await query.answer("Неизвестная команда.")
-
-# -------------------------------------------------------------------
 # Запуск
 # -------------------------------------------------------------------
 def main():
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
-    )
+    logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
     app = Application.builder().token(config.BOT_TOKEN).build()
 
-    # Команды
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("register", cmd_register))
-    app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("prefix", cmd_prefix))
     app.add_handler(CommandHandler("mute", cmd_mute))
     app.add_handler(CommandHandler("unmute", cmd_unmute))
-
-    # Обработчики
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_target_input))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
