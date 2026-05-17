@@ -1,10 +1,10 @@
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8057185585:AAF_LJKPk1OW3U3x7OqOnl0TO2Dux_2mDM0"
 
 # Group where bot works
-GROUP_ID = -1001234567890
+GROUP_ID = -1003908288971
 
 # Admins who receive notifications
-ADMINS = [123456789]
+ADMINS = [8033727736]
 
 # Telegram Stars provider token
 PROVIDER_TOKEN = ""
