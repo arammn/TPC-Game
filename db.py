@@ -19,7 +19,6 @@ def save_db(data):
     with open(DB_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
-# Инициализация при импорте
 if not os.path.exists(DB_FILE):
     save_db(DEFAULT_DB)
 else:
