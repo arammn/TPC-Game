@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from telegram import (
@@ -59,14 +59,14 @@ UNMUTE_PERMISSIONS = ChatPermissions(
 # Цены и длительности
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
-    "10min": 1, "1hour": 80, "5hours": 150,
+    "10min": 50, "1hour": 80, "5hours": 150,
     "10hours": 250, "24hours": 350, "forever": 400,
 }
 MUTE_PRICES = {
-    "10min": 1, "1hour": 100, "5hours": 200,
+    "10min": 50, "1hour": 100, "5hours": 200,
     "10hours": 250, "24hours": 300, "forever": 1000,
 }
-UNMUTE_PRICE = 1
+UNMUTE_PRICE = 70
 
 DURATION_LABELS = {
     "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
@@ -85,7 +85,7 @@ async def delayed_task(delay: float, coro):
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optional[int]:
-    """Поиск пользователя: числовой ID или @username (через get_chat)."""
+    """Поиск пользователя: числовой ID или @username (прямо через get_chat_member)."""
     text = text.strip()
     # 1. Числовой ID
     if text.isdigit():
@@ -101,13 +101,11 @@ async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optiona
     if not username:
         return None
 
+    # Пробуем с @ и без
     for variant in (f"@{username}", username):
         try:
-            chat = await context.bot.get_chat(variant)
-            if chat.type == "private":
-                # Проверяем членство в группе
-                await context.bot.get_chat_member(config.GROUP_CHAT_ID, chat.id)
-                return chat.id
+            member = await context.bot.get_chat_member(config.GROUP_CHAT_ID, variant)
+            return member.user.id
         except:
             continue
     return None
@@ -127,7 +125,7 @@ async def add_to_history(context, buyer_id, product, details):
         "buyer_id": buyer_id,
         "product": product,
         "details": details,
-        "timestamp": datetime.utcnow().timestamp(),
+        "timestamp": datetime.now(timezone.utc).timestamp(),
     })
     save_db(db)
 
@@ -146,7 +144,7 @@ async def notify_admins(context, text):
         logging.error(f"Notify admins: {e}")
 
 # -------------------------------------------------------------------
-# Префикс (как в вашем примере)
+# Префикс (как в примере)
 # -------------------------------------------------------------------
 async def give_prefix(context, user_id: int, title: str):
     await context.bot.promote_chat_member(
@@ -209,7 +207,6 @@ async def cmd_prefix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = context.args[0].replace("@", "")
     title = " ".join(context.args[1:])
 
-    # Поиск среди администраторов (как в вашем примере)
     member = None
     try:
         admins = await context.bot.get_chat_administrators(config.GROUP_CHAT_ID)
@@ -246,6 +243,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Пользователь не найден в группе.")
         return
 
+    # Вычисляем until_date как datetime (как в вашем примере)
     if dur_str == "forever":
         until_date = None
         until_db = None
@@ -259,7 +257,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise ValueError
             until_date = datetime.utcnow() + timedelta(seconds=seconds)
-            until_db = until_date.timestamp()
+            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()  # правильный UTC timestamp
             label = dur_str
         except:
             await update.message.reply_text("Неверный формат. Примеры: 10m, 1h, forever")
@@ -351,7 +349,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             name = f"ID {p['user_id']}"
         if p.get("expires_at"):
-            exp = datetime.fromtimestamp(p["expires_at"]).strftime("%d.%m.%Y %H:%M")
+            exp = datetime.fromtimestamp(p["expires_at"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
             text += f"  {name} — {p['title']} до {exp}\n"
         else:
             text += f"  {name} — {p['title']} (навсегда)\n"
@@ -359,7 +357,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += "  (пусто)\n"
 
     mutes = db.get("mutes", [])
-    now_ts = datetime.utcnow().timestamp()
+    now_ts = datetime.now(timezone.utc).timestamp()
     active = [m for m in mutes if m.get("until_date") is None or m["until_date"] > now_ts]
     text += "\n*Текущие муты:*\n"
     for m in active:
@@ -369,7 +367,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             name = f"ID {m['target_id']}"
         if m.get("until_date"):
-            exp = datetime.fromtimestamp(m["until_date"]).strftime("%d.%m.%Y %H:%M")
+            exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
             text += f"  {name} — до {exp}\n"
         else:
             text += f"  {name} — навсегда\n"
@@ -384,7 +382,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bname = f"@{buyer.username}" if buyer.username else buyer.first_name
         except:
             bname = f"ID {h['buyer_id']}"
-        ts = datetime.fromtimestamp(h["timestamp"]).strftime("%d.%m.%Y %H:%M")
+        ts = datetime.fromtimestamp(h["timestamp"], tz=timezone.utc).strftime("%d.%m.%Y %H:%M")
         text += f"  {ts} — {bname}: {h['product']} {h['details']}\n"
     if not history:
         text += "  (пусто)\n"
@@ -428,13 +426,13 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = load_db()
     prefix = next((p for p in db["prefixes"] if p["user_id"] == user_id), None)
     mutes = [m for m in db["mutes"] if m["muter_id"] == user_id]
-    now = datetime.utcnow().timestamp()
+    now = datetime.now(timezone.utc).timestamp()
 
     text = "👤 *Ваш профиль*\n\n"
     if prefix:
         if prefix.get("expires_at"):
-            exp = datetime.fromtimestamp(prefix["expires_at"])
-            remaining = exp - datetime.now()
+            exp = datetime.fromtimestamp(prefix["expires_at"], tz=timezone.utc)
+            remaining = exp - datetime.now(timezone.utc)
             if remaining.total_seconds() > 0:
                 text += f"🏷️ Префикс: {prefix['title']} (истекает через {str(remaining).split('.')[0]})\n"
             else:
@@ -454,7 +452,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 name = f"ID {m['target_id']}"
             if m.get("until_date"):
                 if m["until_date"] > now:
-                    exp = datetime.fromtimestamp(m["until_date"]).strftime("%H:%M")
+                    exp = datetime.fromtimestamp(m["until_date"], tz=timezone.utc).strftime("%H:%M")
                     text += f"  → {name}: до {exp}\n"
                 else:
                     text += f"  → {name}: истёк\n"
@@ -481,6 +479,7 @@ async def show_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
+# Карточки товаров (без изменений)
 async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -575,6 +574,7 @@ async def show_unmute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
+# Обработчик ввода цели
 async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -648,10 +648,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
         db = load_db()
+        expires_at = None
+        if expires_in:
+            expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).timestamp()
         db["prefixes"].append({
             "user_id": buyer.id,
             "title": title,
-            "expires_at": (datetime.utcnow() + timedelta(seconds=expires_in)).timestamp() if expires_in else None,
+            "expires_at": expires_at,
             "purchase_id": payload,
         })
         save_db(db)
@@ -677,14 +680,14 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif payload.startswith("mute_"):
         _, dur, target_id_str = payload.split("_")
         target_id = int(target_id_str)
-        now = datetime.utcnow()
+        # Используем UTC datetime как в админской команде
         if dur == "forever":
             until_date = None
             until_db = None
         else:
             seconds = DURATION_SECONDS[dur]
-            until_date = int((now + timedelta(seconds=seconds)).timestamp())
-            until_db = until_date
+            until_date = datetime.utcnow() + timedelta(seconds=seconds)  # объект datetime
+            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()  # UTC timestamp
 
         try:
             await context.bot.restrict_chat_member(
@@ -712,7 +715,7 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 db2 = load_db()
                 db2["mutes"] = [m for m in db2["mutes"] if not (m["target_id"] == target_id and m["until_date"] == until_db)]
                 save_db(db2)
-            delay = until_db - now.timestamp()
+            delay = until_db - datetime.now(timezone.utc).timestamp()
             if delay > 0:
                 asyncio.create_task(delayed_task(delay, cleanup))
 
@@ -764,11 +767,11 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
 # -------------------------------------------------------------------
-# Восстановление задач при запуске
+# Восстановление отложенных задач при запуске
 # -------------------------------------------------------------------
 async def restore_scheduled_jobs(app: Application):
     db = load_db()
-    now = datetime.utcnow().timestamp()
+    now = datetime.now(timezone.utc).timestamp()
 
     for p in db.get("prefixes", []):
         if p.get("expires_at") and (delay := p["expires_at"] - now) > 0:
@@ -817,14 +820,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Запуск
 # -------------------------------------------------------------------
 def main():
-    logging.basicConfig(
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
+    logging.basic.basicConfig(
+        format="%(asctConfig(
+        format="%(asctime)sime)s - %(name)s - %(levelname - %(name)s - %(levelname)s -)s - %( %(message)s",
+       message)s",
+        level= level=logginglogging..INFOINFO,
     )
-    app = Application.builder().token(config.BOT_TOKEN).build()
+    app = Application,
+    )
+    app = Application.builder().token.builder().token(config.B(config.BOT_TOKENOT_TOKEN).build).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin_command))
+   ()
+
+    app.add app.add_handler(CommandHandler_handler(CommandHandler("start("start", start", start))
+   ))
+    app.add app.add_handler(_handler(CommandHandler("adminCommandHandler("admin", admin", admin_command))
     app.add_handler(CommandHandler("prefix", cmd_prefix))
     app.add_handler(CommandHandler("mute", cmd_mute))
     app.add_handler(CommandHandler("unmute", cmd_unmute))
