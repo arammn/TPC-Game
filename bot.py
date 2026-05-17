@@ -63,14 +63,14 @@ def save_db(data):
 # Цены и длительности
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
-    "10min": 50, "1hour": 80, "5hours": 150,
+    "10min": 1, "1hour": 80, "5hours": 150,
     "10hours": 250, "24hours": 350, "forever": 400,
 }
 MUTE_PRICES = {
-    "10min": 50, "1hour": 100, "5hours": 200,
+    "10min": 1, "1hour": 100, "5hours": 200,
     "10hours": 250, "24hours": 300, "forever": 1000,
 }
-UNMUTE_PRICE = 70
+UNMUTE_PRICE = 1
 
 DURATION_LABELS = {
     "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
