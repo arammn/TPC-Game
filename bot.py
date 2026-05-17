@@ -59,14 +59,14 @@ UNMUTE_PERMISSIONS = ChatPermissions(
 # Цены и длительности
 # -------------------------------------------------------------------
 PREFIX_PRICES = {
-    "10min": 50, "1hour": 80, "5hours": 150,
+    "10min": 1, "1hour": 80, "5hours": 150,
     "10hours": 250, "24hours": 350, "forever": 400,
 }
 MUTE_PRICES = {
-    "10min": 50, "1hour": 100, "5hours": 200,
+    "10min": 1, "1hour": 100, "5hours": 200,
     "10hours": 250, "24hours": 300, "forever": 1000,
 }
-UNMUTE_PRICE = 70
+UNMUTE_PRICE = 1
 
 DURATION_LABELS = {
     "10min": "10 минут", "1hour": "1 час", "5hours": "5 часов",
@@ -101,7 +101,6 @@ async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE) -> Optiona
     if not username:
         return None
 
-    # Пробуем с @ и без
     for variant in (f"@{username}", username):
         try:
             member = await context.bot.get_chat_member(config.GROUP_CHAT_ID, variant)
@@ -243,7 +242,6 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Пользователь не найден в группе.")
         return
 
-    # Вычисляем until_date как datetime (как в вашем примере)
     if dur_str == "forever":
         until_date = None
         until_db = None
@@ -257,7 +255,7 @@ async def cmd_mute(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 raise ValueError
             until_date = datetime.utcnow() + timedelta(seconds=seconds)
-            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()  # правильный UTC timestamp
+            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()
             label = dur_str
         except:
             await update.message.reply_text("Неверный формат. Примеры: 10m, 1h, forever")
@@ -479,7 +477,7 @@ async def show_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
     )
 
-# Карточки товаров (без изменений)
+# Карточки товаров (полный код)
 async def show_prefix_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -574,7 +572,6 @@ async def show_unmute_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="shop")]]),
     )
 
-# Обработчик ввода цели
 async def handle_target_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
@@ -680,14 +677,13 @@ async def successful_payment(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif payload.startswith("mute_"):
         _, dur, target_id_str = payload.split("_")
         target_id = int(target_id_str)
-        # Используем UTC datetime как в админской команде
         if dur == "forever":
             until_date = None
             until_db = None
         else:
             seconds = DURATION_SECONDS[dur]
             until_date = datetime.utcnow() + timedelta(seconds=seconds)  # объект datetime
-            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()  # UTC timestamp
+            until_db = until_date.replace(tzinfo=timezone.utc).timestamp()
 
         try:
             await context.bot.restrict_chat_member(
@@ -820,21 +816,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Запуск
 # -------------------------------------------------------------------
 def main():
-    logging.basic.basicConfig(
-        format="%(asctConfig(
-        format="%(asctime)sime)s - %(name)s - %(levelname - %(name)s - %(levelname)s -)s - %( %(message)s",
-       message)s",
-        level= level=logginglogging..INFOINFO,
+    logging.basicConfig(
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO,
     )
-    app = Application,
-    )
-    app = Application.builder().token.builder().token(config.B(config.BOT_TOKENOT_TOKEN).build).build()
+    app = Application.builder().token(config.BOT_TOKEN).build()
 
-   ()
-
-    app.add app.add_handler(CommandHandler_handler(CommandHandler("start("start", start", start))
-   ))
-    app.add app.add_handler(_handler(CommandHandler("adminCommandHandler("admin", admin", admin_command))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("prefix", cmd_prefix))
     app.add_handler(CommandHandler("mute", cmd_mute))
     app.add_handler(CommandHandler("unmute", cmd_unmute))
