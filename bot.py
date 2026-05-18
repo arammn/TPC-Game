@@ -24,7 +24,7 @@ import config
 from db import load_db, save_db
 
 # -------------------------------------------------------------------
-# Наборы прав
+# Наборы прав для мута/размута
 # -------------------------------------------------------------------
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False,
@@ -85,7 +85,6 @@ async def delayed_task(delay: float, coro):
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: int) -> Optional[int]:
-    """Поиск пользователя по @username или ID в конкретной группе."""
     text = text.strip()
     if text.isdigit():
         user_id = int(text)
@@ -410,43 +409,51 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(group_id, f"🔊 {name} снова может писать.")
 
 # -------------------------------------------------------------------
-# Личный кабинет – выбор группы
+# Личный кабинет – выбор группы и главное меню
 # -------------------------------------------------------------------
+async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает список групп для выбора. Может редактировать существующее сообщение (если есть коллбэк)."""
+    user_id = update.effective_user.id
+    groups = await get_user_groups(user_id, context)
+    if not groups:
+        text = "❌ Вы не состоите ни в одной зарегистрированной группе."
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text)
+        else:
+            await update.message.reply_text(text)
+        return
+
+    keyboard = []
+    for gid in groups:
+        name = await get_group_name(context, gid)
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"select_group_{gid}")])
+    keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_selection")])
+
+    text = "Выберите группу для взаимодействия:"
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         await update.message.reply_text("Пожалуйста, используйте /start в личном чате.")
         return
 
-    user_id = update.effective_user.id
-    groups = await get_user_groups(user_id, context)
-    if not groups:
-        await update.message.reply_text("❌ Вы не состоите ни в одной зарегистрированной группе.")
-        return
-
-    if len(groups) == 1:
-        context.user_data["selected_group"] = groups[0]
-        await show_main_menu(update, context)
-    else:
-        keyboard = []
-        for gid in groups:
-            name = await get_group_name(context, gid)
-            keyboard.append([InlineKeyboardButton(name, callback_data=f"select_group_{gid}")])
-        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel")])
-        await update.message.reply_text(
-            "Выберите группу для взаимодействия:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
+    # Показываем выбор группы
+    await show_group_selection(update, context)
 
 async def select_group_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    if data == "cancel":
+    if data == "cancel_selection":
         await query.edit_message_text("Действие отменено.")
         return
     gid = int(data.split("_")[2])
     context.user_data["selected_group"] = gid
-    await query.edit_message_text(f"Группа выбрана: {await get_group_name(context, gid)}")
+    await query.edit_message_text(f"✅ Группа выбрана: {await get_group_name(context, gid)}")
+    # Показываем главное меню
     await show_main_menu(update, context)
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -471,7 +478,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     group_id = context.user_data.get("selected_group")
     if not group_id:
-        await query.edit_message_text("Сначала выберите группу через /start.")
+        await query.edit_message_text("Сначала выберите группу.")
         return
 
     db = load_db()
@@ -902,8 +909,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_panel":
         await admin_panel(update, context)
     elif data == "change_group":
+        # Сбрасываем выбранную группу и показываем выбор групп заново
         context.user_data.pop("selected_group", None)
-        await start(update, context)
+        await show_group_selection(update, context)
     elif data.startswith("select_group_"):
         await select_group_callback(update, context)
     elif data.startswith("prefix_dur_") or data.startswith("mute_dur_"):
