@@ -8,6 +8,7 @@ DEFAULT_DB = {
     "prefixes": [],
     "mutes": [],
     "history": [],
+    "known_users": [],
 }
 
 def load_db():
