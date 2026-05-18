@@ -85,7 +85,9 @@ async def delayed_task(delay: float, coro):
     await coro()
 
 async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: int) -> Optional[int]:
+    """Поиск пользователя: числовой ID или @username (используем get_chat как в примере)."""
     text = text.strip()
+    # 1. Числовой ID
     if text.isdigit():
         user_id = int(text)
         try:
@@ -94,24 +96,21 @@ async def resolve_user(text: str, context: ContextTypes.DEFAULT_TYPE, group_id: 
         except:
             pass
 
+    # 2. Username – берём пример /id
     username = text.lstrip('@')
     if not username:
         return None
 
-    for variant in (f"@{username}", username):
-        try:
-            member = await context.bot.get_chat_member(group_id, variant)
-            return member.user.id
-        except:
-            continue
-
+    # Пробуем получить chat с @username
     try:
-        user = await context.bot.get_chat(f"@{username}")
-        if user.type == "private":
-            await context.bot.get_chat_member(group_id, user.id)
-            return user.id
-    except:
+        chat = await context.bot.get_chat(f"@{username}")
+        if chat.type == "private":
+            # Проверяем, что он в группе
+            await context.bot.get_chat_member(group_id, chat.id)
+            return chat.id
+    except Exception:
         pass
+
     return None
 
 async def is_user_admin(user_id: int, context: ContextTypes.DEFAULT_TYPE, group_id: int) -> bool:
@@ -412,7 +411,6 @@ async def cmd_unmute(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Личный кабинет – выбор группы и главное меню
 # -------------------------------------------------------------------
 async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показывает список групп для выбора. Может редактировать существующее сообщение (если есть коллбэк)."""
     user_id = update.effective_user.id
     groups = await get_user_groups(user_id, context)
     if not groups:
@@ -439,8 +437,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         await update.message.reply_text("Пожалуйста, используйте /start в личном чате.")
         return
-
-    # Показываем выбор группы
     await show_group_selection(update, context)
 
 async def select_group_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,7 +449,6 @@ async def select_group_callback(update: Update, context: ContextTypes.DEFAULT_TY
     gid = int(data.split("_")[2])
     context.user_data["selected_group"] = gid
     await query.edit_message_text(f"✅ Группа выбрана: {await get_group_name(context, gid)}")
-    # Показываем главное меню
     await show_main_menu(update, context)
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -909,7 +904,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_panel":
         await admin_panel(update, context)
     elif data == "change_group":
-        # Сбрасываем выбранную группу и показываем выбор групп заново
         context.user_data.pop("selected_group", None)
         await show_group_selection(update, context)
     elif data.startswith("select_group_"):
